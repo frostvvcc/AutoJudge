@@ -13,6 +13,12 @@ from app.engine.context import DebateContext, DebateConfig
 from app.engine.budget import BudgetManager
 from app.engine.consensus import ConsensusDetector
 from app.engine.requirement_parser import parse_requirement
+from app.engine.complexity_router import route_complexity, get_debate_config
+from app.engine.test_runner import TestRunner
+from app.memory.attack_knowledge import AttackKnowledgeBase
+from app.memory.user_preferences import UserPreferenceStore
+from app.memory.fix_patterns import FixPatternStore
+from app.tracing.metrics import record_debate_complete, record_agent_call
 from app.api.models.response import (
     DebateResult,
     DebateSummary,
@@ -31,15 +37,15 @@ ATTACKER_REGISTRY = {
 
 
 class DebateOrchestrator:
-    """
-    The debate orchestrator — AutoJudge's heart.
-    Not a pipeline scheduler, but a debate moderator.
-    """
 
-    def __init__(self):
+    def __init__(self, redis_client=None):
         self.coder = CoderAgent()
         self.judge = JudgeAgent()
         self.consensus_detector = ConsensusDetector()
+        self.test_runner = TestRunner()
+        self.attack_kb = AttackKnowledgeBase()
+        self.user_prefs = UserPreferenceStore(redis_client)
+        self.fix_patterns = FixPatternStore()
 
     async def run(
         self,
@@ -48,10 +54,9 @@ class DebateOrchestrator:
         framework: str | None = None,
         config: DebateConfig | None = None,
         on_progress: callable = None,
+        api_key: str | None = None,
     ) -> DebateResult:
         config = config or DebateConfig()
-        context = DebateContext(requirement, config)
-        budget = BudgetManager(config.max_tokens)
         start_time = time.monotonic()
 
         await self._notify(on_progress, {
@@ -59,10 +64,39 @@ class DebateOrchestrator:
         })
 
         parsed_req = await parse_requirement(requirement, language, framework)
+
+        # --- ComplexityRouter: adjust config based on task complexity ---
+        complexity = route_complexity(requirement, parsed_req)
+        complexity_config = get_debate_config(complexity)
+        if config.max_rounds == DebateConfig().max_rounds:
+            config.max_rounds = complexity_config["max_rounds"]
+        if config.attackers == DebateConfig().attackers:
+            config.attackers = complexity_config["attackers"]
+        if complexity_config.get("skip_cross_review"):
+            config.skip_cross_review = True
+
+        context = DebateContext(requirement, config)
+        budget = BudgetManager(config.max_tokens)
         context.set_requirement_context(parsed_req)
 
+        # --- Memory Layer 1: retrieve attack experiences ---
+        experiences = await self.attack_kb.retrieve_relevant(requirement)
+        if experiences:
+            context.set_experience_context(
+                self.attack_kb.build_experience_prompt(experiences)
+            )
+
+        # --- Memory Layer 2: load user preferences ---
+        if api_key:
+            prefs = await self.user_prefs.get_preferences(api_key)
+            if prefs:
+                context.set_preference_context(
+                    self.user_prefs.build_preference_prompt(prefs)
+                )
+
         await self._notify(on_progress, {
-            "type": "status", "content": "需求分析完成，开始对抗..."
+            "type": "status",
+            "content": f"需求分析完成（复杂度: {complexity.value}），开始对抗...",
         })
 
         convergence_result = {"converged": False, "status": {}}
@@ -99,6 +133,33 @@ class DebateOrchestrator:
                 })
                 break
 
+        # --- TestRunner: verify final code before Judge ---
+        if context.current_code and budget.can_continue(reserve=0.10):
+            await self._notify(on_progress, {
+                "type": "status", "content": "代码执行验证中..."
+            })
+            verify_result = await self.test_runner.verify(
+                context.current_code,
+                requirement,
+                llm_client=None,
+                debate_context=context,
+                language=language,
+            )
+            if not verify_result.passed and budget.can_continue(reserve=0.10):
+                context.add_message(
+                    "system",
+                    f"代码执行验证失败：\n{verify_result.stderr}\n请修复后重新提交。",
+                )
+                fix_response = await self.coder.speak(
+                    context, "修复测试失败的问题，贴出完整的修复后代码。", budget
+                )
+                context.add_message(
+                    "coder", fix_response.content,
+                    code=fix_response.code,
+                    structured=fix_response.structured,
+                )
+
+        # --- Judge ---
         await self._notify(on_progress, {
             "type": "status", "content": "对抗结束，Judge 正在总结..."
         })
@@ -106,7 +167,20 @@ class DebateOrchestrator:
         judge_report = await self.judge.summarize(context, budget)
 
         elapsed_ms = int((time.monotonic() - start_time) * 1000)
-        budget.record_latency(0)
+
+        # --- Memory write-back ---
+        await self._store_to_memory(
+            requirement, language, context, judge_report, api_key, config
+        )
+
+        # --- Metrics ---
+        record_debate_complete(
+            language=language,
+            complexity=complexity.value,
+            rounds=context.round,
+            converged=convergence_result.get("converged", False),
+            duration_s=elapsed_ms / 1000,
+        )
 
         metrics_raw = budget.get_metrics()
 
@@ -118,7 +192,8 @@ class DebateOrchestrator:
                 "total_rounds": context.round,
                 "converged": convergence_result.get("converged", False),
                 "consensus_reason": convergence_result.get(
-                    "reason", "各方达成共识" if convergence_result.get("converged") else "达到最大轮次"
+                    "reason",
+                    "各方达成共识" if convergence_result.get("converged") else "达到最大轮次",
                 ),
                 "transcript": context.get_transcript(),
             },
@@ -144,7 +219,8 @@ class DebateOrchestrator:
             ),
             converged=convergence_result.get("converged", False),
             convergence_reason=convergence_result.get(
-                "reason", "各方达成共识" if convergence_result.get("converged") else "达到最大轮次"
+                "reason",
+                "各方达成共识" if convergence_result.get("converged") else "达到最大轮次",
             ),
         )
 
@@ -152,18 +228,50 @@ class DebateOrchestrator:
 
         return result
 
+    async def _store_to_memory(
+        self, requirement, language, context, judge_report, api_key, config
+    ):
+        """Store debate results into three-layer Memory system."""
+        # Layer 1: store accepted attack findings
+        accepted_findings = []
+        for msg in context.messages:
+            if msg.agent in ("security", "performance", "correctness"):
+                if msg.structured and isinstance(msg.structured, dict):
+                    for f in msg.structured.get("findings", []):
+                        accepted_findings.append({
+                            **f,
+                            "was_accepted": True,
+                            "attacker": msg.agent,
+                        })
+        if accepted_findings:
+            await self.attack_kb.store_findings(
+                requirement, language, accepted_findings
+            )
+
+        # Layer 3: store fix patterns from Coder responses
+        for msg in context.messages:
+            if msg.agent == "coder" and msg.structured and msg.code:
+                for resp in msg.structured.get("responses", []):
+                    if resp.get("action") == "accept_and_fix":
+                        await self.fix_patterns.store_fix(
+                            finding_description=resp.get("explanation", ""),
+                            category=resp.get("finding_ref", "unknown"),
+                            severity="medium",
+                            fix_code=msg.code,
+                        )
+
+        # Layer 2: update user preferences
+        if api_key:
+            await self.user_prefs.update_from_request(
+                api_key, {"language": config.attackers[0] if config.attackers else "python"}
+            )
+
     async def _execute_round(
         self,
         context: DebateContext,
         budget: BudgetManager,
         on_progress: callable = None,
     ) -> list:
-        """
-        One round has three stages:
-        Stage 1: Coder speaks (respond to attacks + tool-backed rebuttal + fix)
-        Stage 2: Attackers attack in parallel
-        Stage 3: Cross-review (attackers see each other's findings, supplement/deduplicate)
-        """
         round_messages = []
 
         # Stage 1: Coder speaks
@@ -176,7 +284,7 @@ class DebateOrchestrator:
         else:
             coder_prompt = (
                 "请回应上一轮各 Attacker 的意见。"
-                "对每个攻击：如果合理，承认并修复；如果不合理，给出反驳证据。"
+                "对每个攻击：如果合理，承认并修复；如果不合理，调用工具验证后给出反驳证据。"
                 "如果有修复，贴出完整的新版代码。"
             )
 
@@ -184,7 +292,13 @@ class DebateOrchestrator:
             "type": "agent_start", "agent": "coder"
         })
 
+        coder_start = time.monotonic()
         coder_response = await self.coder.speak(context, coder_prompt, budget)
+        record_agent_call(
+            "coder", coder_response.tokens_used,
+            time.monotonic() - coder_start,
+        )
+
         context.add_message(
             "coder",
             coder_response.content,
@@ -224,11 +338,12 @@ class DebateOrchestrator:
                     "type": "agent_start", "agent": name
                 })
                 agent = ATTACKER_REGISTRY[name]
-                return await agent.speak(context, attacker_prompt, budget)
+                a_start = time.monotonic()
+                resp = await agent.speak(context, attacker_prompt, budget)
+                record_agent_call(name, resp.tokens_used, time.monotonic() - a_start)
+                return resp
             except Exception as e:
-                logger.warning(
-                    "attacker_failed", agent=name, error=str(e)
-                )
+                logger.warning("attacker_failed agent=%s error=%s", name, e)
                 return e
 
         attacker_results = await asyncio.gather(

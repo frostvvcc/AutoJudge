@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import logging
+
 from app.agents.base import BaseAgent, SAFETY_SUFFIX
 from app.engine.context import DebateContext
-from app.llm.client import ATTACKER_SUBMIT_TOOL
+from app.engine.budget import BudgetManager
+from app.llm.client import ATTACKER_SUBMIT_TOOL, AgentResponse
+
+logger = logging.getLogger(__name__)
 
 
 class SecurityAttacker(BaseAgent):
@@ -43,3 +48,52 @@ class SecurityAttacker(BaseAgent):
 
     def get_tool_choice(self) -> dict:
         return {"type": "tool", "name": "submit_review"}
+
+    async def speak(
+        self,
+        context: DebateContext,
+        prompt: str,
+        budget: BudgetManager,
+        model: str | None = None,
+    ) -> AgentResponse:
+        """LLM reasoning + static analysis tool verification (dual-source attack)."""
+        tool_findings = []
+        if context.current_code:
+            tool_findings = await self._run_static_analysis(context.current_code)
+
+        if tool_findings:
+            prompt += (
+                "\n\n以下是静态分析工具（bandit/semgrep）的实际扫描结果，"
+                "请将这些工具发现纳入你的审查，标注来源为工具验证：\n"
+                + "\n".join(tool_findings)
+            )
+
+        return await super().speak(context, prompt, budget, model)
+
+    async def _run_static_analysis(self, code: str) -> list[str]:
+        findings = []
+        try:
+            from app.mcp.servers.code_analysis import bandit_scan
+            result = await bandit_scan(code, "python")
+            for item in result.get("results", []):
+                findings.append(
+                    f"[bandit {item.get('test_id', '?')}] "
+                    f"Severity: {item.get('issue_severity', '?')} | "
+                    f"Line {item.get('line_number', '?')}: "
+                    f"{item.get('issue_text', '?')}"
+                )
+        except Exception as e:
+            logger.debug("bandit_scan_skipped: %s", e)
+
+        try:
+            from app.mcp.servers.code_analysis import semgrep_scan
+            result = await semgrep_scan(code, "python")
+            for item in result.get("results", []):
+                findings.append(
+                    f"[semgrep] {item.get('check_id', '?')}: "
+                    f"{item.get('extra', {}).get('message', '?')}"
+                )
+        except Exception as e:
+            logger.debug("semgrep_scan_skipped: %s", e)
+
+        return findings

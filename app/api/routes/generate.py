@@ -1,19 +1,22 @@
 from __future__ import annotations
 
-import uuid
 import asyncio
 import logging
+import time
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from fastapi.responses import JSONResponse
 
 from app.api.models.request import GenerateRequest
 from app.api.models.response import DebateResult
 from app.engine.context import DebateConfig
-from app.engine.orchestrator import DebateOrchestrator
+from app.engine.degradation import DegradationManager
+from app.engine.resource_manager import ResourceManager
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["generate"])
+
+degradation_mgr = DegradationManager()
+resource_mgr = ResourceManager()
 
 
 @router.post("/generate", response_model=DebateResult)
@@ -36,13 +39,13 @@ async def generate(request: GenerateRequest):
         ),
     )
 
-    orchestrator = DebateOrchestrator()
-    result = await orchestrator.run(
-        requirement=request.task,
-        language=request.language,
-        framework=request.framework,
-        config=config,
-    )
+    async with resource_mgr.acquire_debate_slot():
+        result = await degradation_mgr.execute_with_degradation(
+            requirement=request.task,
+            language=request.language,
+            framework=request.framework,
+            config=config,
+        )
 
     return result
 
@@ -74,7 +77,38 @@ async def websocket_generate(websocket: WebSocket):
         max_tokens=config_data.get("max_tokens", 100_000),
     )
 
+    from app.engine.orchestrator import DebateOrchestrator
     orchestrator = DebateOrchestrator()
+
+    # User intervention: listen for skip/add_context/force_stop in background
+    stop_event = asyncio.Event()
+
+    async def listen_for_intervention():
+        while not stop_event.is_set():
+            try:
+                msg = await asyncio.wait_for(
+                    websocket.receive_json(), timeout=1.0
+                )
+                msg_type = msg.get("type")
+                if msg_type == "skip_attacker":
+                    attacker = msg.get("attacker", "")
+                    if attacker not in orchestrator.coder.name:
+                        config.attackers = [
+                            a for a in config.attackers if a != attacker
+                        ]
+                        logger.info("user_skipped_attacker attacker=%s", attacker)
+                elif msg_type == "add_context":
+                    extra = msg.get("content", "")
+                    if extra:
+                        orchestrator._extra_user_context = extra
+                        logger.info("user_added_context")
+                elif msg_type == "force_stop":
+                    stop_event.set()
+                    logger.info("user_forced_stop")
+            except asyncio.TimeoutError:
+                continue
+            except (WebSocketDisconnect, Exception):
+                break
 
     async def on_progress(event: dict):
         try:
@@ -84,13 +118,22 @@ async def websocket_generate(websocket: WebSocket):
 
     try:
         async with asyncio.timeout(300):
-            result = await orchestrator.run(
-                requirement=task,
-                language=language,
-                framework=framework,
-                config=config,
-                on_progress=on_progress,
-            )
+            listener_task = asyncio.create_task(listen_for_intervention())
+            try:
+                result = await orchestrator.run(
+                    requirement=task,
+                    language=language,
+                    framework=framework,
+                    config=config,
+                    on_progress=on_progress,
+                )
+            finally:
+                stop_event.set()
+                listener_task.cancel()
+                try:
+                    await listener_task
+                except asyncio.CancelledError:
+                    pass
 
         await websocket.send_json({
             "type": "result",
@@ -104,7 +147,7 @@ async def websocket_generate(websocket: WebSocket):
     except WebSocketDisconnect:
         logger.info("websocket_disconnected")
     except Exception as e:
-        logger.error("websocket_error", error=str(e))
+        logger.error("websocket_error error=%s", e)
         try:
             await websocket.send_json({
                 "type": "error", "message": str(e)

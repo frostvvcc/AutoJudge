@@ -375,7 +375,9 @@ def _parse_api_response(response, agent: str) -> AgentResponse:
 def _get_tools_for_agent(agent: str) -> tuple[list[dict], dict]:
     """Get tool definitions and tool_choice for Anthropic API mode."""
     if agent == "coder":
-        return CODER_TOOLS, {"type": "tool", "name": "submit_response"}
+        # Use "any" so Coder can call run_code_snippet / check_documentation
+        # before submitting final response via submit_response
+        return CODER_TOOLS, {"type": "any"}
     elif agent in ("security", "performance", "correctness"):
         return [ATTACKER_SUBMIT_TOOL], {"type": "tool", "name": "submit_review"}
     elif agent == "judge":
@@ -398,6 +400,51 @@ def _get_tools_for_agent(agent: str) -> tuple[list[dict], dict]:
     return [], {"type": "auto"}
 
 
+async def _execute_coder_tool(tool_name: str, tool_input: dict) -> str:
+    """Execute Coder's verification tools and return result text."""
+    if tool_name == "run_code_snippet":
+        return await _run_code_snippet(
+            tool_input.get("code", ""), tool_input.get("expected", "")
+        )
+    elif tool_name == "check_documentation":
+        return (
+            f"Documentation query: {tool_input.get('query', '')}\n"
+            "Please verify this based on your knowledge of the framework/library. "
+            "If uncertain, note the uncertainty in your response."
+        )
+    return f"Unknown tool: {tool_name}"
+
+
+async def _run_code_snippet(code: str, expected: str) -> str:
+    """Run a code snippet in a subprocess sandbox and return output."""
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(
+        suffix=".py", mode="w", delete=False
+    ) as f:
+        f.write(code)
+        f.flush()
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                "python", f.name,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(), timeout=10
+            )
+            output = stdout.decode("utf-8", errors="replace")
+            errors = stderr.decode("utf-8", errors="replace")
+            if proc.returncode == 0:
+                return f"Execution succeeded.\nOutput:\n{output}\nExpected: {expected}"
+            else:
+                return f"Execution failed (exit {proc.returncode}).\nStderr:\n{errors}\nExpected: {expected}"
+        except asyncio.TimeoutError:
+            return "Execution timed out after 10s."
+        except FileNotFoundError:
+            return "Python not available for code execution."
+
+
 async def _call_anthropic_api(
     agent: str,
     system_prompt: str,
@@ -405,11 +452,18 @@ async def _call_anthropic_api(
     model: str | None = None,
     max_tokens: int = 4000,
 ) -> AgentResponse:
-    """Call Anthropic API directly with tool_use structured output."""
+    """Call Anthropic API directly with tool_use structured output.
+
+    For Coder agent, implements a tool_use loop: if the model calls
+    run_code_snippet or check_documentation, execute the tool and
+    continue the conversation until submit_response is called.
+    """
     import anthropic
+    from app.llm.model_router import get_model_for_agent
 
     client = _get_anthropic_client()
     tools, tool_choice = _get_tools_for_agent(agent)
+    resolved_model = model or get_model_for_agent(agent)
 
     system_blocks = [
         {"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}
@@ -419,18 +473,68 @@ async def _call_anthropic_api(
     if cached_tools:
         cached_tools[-1] = {**cached_tools[-1], "cache_control": {"type": "ephemeral"}}
 
+    conv_messages = list(messages)
+    total_tokens = 0
+    total_cache_read = 0
+    total_cache_creation = 0
+
     start = time.monotonic()
-    response = await client.messages.create(
-        model=model or settings.default_model,
-        system=system_blocks,
-        messages=messages,
-        tools=cached_tools,
-        tool_choice=tool_choice,
-        max_tokens=max_tokens,
-    )
+    max_tool_turns = 3
+
+    for turn in range(max_tool_turns + 1):
+        response = await client.messages.create(
+            model=resolved_model,
+            system=system_blocks,
+            messages=conv_messages,
+            tools=cached_tools,
+            tool_choice=tool_choice if turn == 0 and agent != "coder" else (
+                {"type": "any"} if agent == "coder" else tool_choice
+            ),
+            max_tokens=max_tokens,
+        )
+
+        total_tokens += response.usage.input_tokens + response.usage.output_tokens
+        total_cache_read += getattr(response.usage, "cache_read_input_tokens", 0) or 0
+        total_cache_creation += getattr(response.usage, "cache_creation_input_tokens", 0) or 0
+
+        if agent != "coder" or response.stop_reason != "tool_use":
+            break
+
+        # Check if model called a verification tool (not submit_response)
+        pending_tool_calls = []
+        has_submit = False
+        for block in response.content:
+            if block.type == "tool_use":
+                if block.name == "submit_response":
+                    has_submit = True
+                else:
+                    pending_tool_calls.append(block)
+
+        if has_submit or not pending_tool_calls:
+            break
+
+        # Execute verification tools and continue conversation
+        conv_messages.append({"role": "assistant", "content": response.content})
+        tool_results = []
+        for tc in pending_tool_calls:
+            result_text = await _execute_coder_tool(tc.name, tc.input)
+            tool_results.append({
+                "type": "tool_result",
+                "tool_use_id": tc.id,
+                "content": result_text,
+            })
+            logger.info(
+                "coder_tool_executed",
+                tool=tc.name, turn=turn,
+            )
+        conv_messages.append({"role": "user", "content": tool_results})
+
     elapsed_ms = int((time.monotonic() - start) * 1000)
 
     result = _parse_api_response(response, agent)
+    result.tokens_used = total_tokens
+    result.cache_read = total_cache_read
+    result.cache_creation = total_cache_creation
     result.latency_ms = elapsed_ms
     return result
 

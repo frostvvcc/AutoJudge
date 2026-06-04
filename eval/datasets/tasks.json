@@ -119,5 +119,488 @@
       {"category": "security", "description": "锁的 value 可预测，可被其他客户端释放"},
       {"category": "performance", "description": "忙等待获取锁，浪费 CPU"}
     ]
+  },
+  {
+    "id": "func_004",
+    "task": "实现一个函数，将嵌套字典扁平化为单层字典，键用点号连接（如 {'a': {'b': 1}} -> {'a.b': 1}）",
+    "language": "python",
+    "difficulty": "easy",
+    "known_issues": [
+      {"category": "correctness", "description": "未处理键名本身包含点号的情况"},
+      {"category": "correctness", "description": "未处理值为空字典的情况"},
+      {"category": "performance", "description": "递归过深可能栈溢出，未做深度限制"}
+    ]
+  },
+  {
+    "id": "func_005",
+    "task": "实现一个函数，验证身份证号码格式并提取出生日期和性别信息",
+    "language": "python",
+    "difficulty": "easy",
+    "known_issues": [
+      {"category": "correctness", "description": "未校验18位身份证的校验码"},
+      {"category": "correctness", "description": "未处理15位旧版身份证号"},
+      {"category": "security", "description": "身份证号作为敏感信息未做日志脱敏"}
+    ]
+  },
+  {
+    "id": "func_006",
+    "task": "实现一个函数，解析 cron 表达式并返回下次执行时间",
+    "language": "python",
+    "difficulty": "easy",
+    "known_issues": [
+      {"category": "correctness", "description": "未处理闰年2月29日"},
+      {"category": "correctness", "description": "未处理时区问题"},
+      {"category": "correctness", "description": "不支持特殊字符 L、W、#"}
+    ]
+  },
+  {
+    "id": "func_007",
+    "task": "实现一个函数，对中文文本进行敏感词过滤，支持模糊匹配（如中间插入特殊字符）",
+    "language": "python",
+    "difficulty": "easy",
+    "known_issues": [
+      {"category": "correctness", "description": "未处理 Unicode 变体字符绕过"},
+      {"category": "performance", "description": "逐词遍历匹配，未使用 Aho-Corasick 或 Trie 树"},
+      {"category": "correctness", "description": "替换后可能产生新的敏感词组合"}
+    ]
+  },
+  {
+    "id": "func_008",
+    "task": "实现一个函数，计算两个地理坐标（经纬度）之间的距离，支持不同单位（公里/英里）",
+    "language": "python",
+    "difficulty": "easy",
+    "known_issues": [
+      {"category": "correctness", "description": "使用简化球面公式，未考虑地球椭球体形状"},
+      {"category": "correctness", "description": "未校验经纬度范围（经度-180~180，纬度-90~90）"},
+      {"category": "performance", "description": "批量计算时未做向量化优化"}
+    ]
+  },
+  {
+    "id": "func_009",
+    "task": "实现一个函数，将金额数字转换为中文大写（如 1234.56 -> 壹仟贰佰叁拾肆元伍角陆分）",
+    "language": "python",
+    "difficulty": "easy",
+    "known_issues": [
+      {"category": "correctness", "description": "未处理连续零的合并（如 1001 应为壹仟零壹）"},
+      {"category": "correctness", "description": "未处理整数金额末尾的「整」字"},
+      {"category": "correctness", "description": "未限制金额上限和小数位数"}
+    ]
+  },
+  {
+    "id": "func_010",
+    "task": "实现一个函数，解析并验证银行卡号，使用 Luhn 算法校验并识别发卡行",
+    "language": "python",
+    "difficulty": "easy",
+    "known_issues": [
+      {"category": "correctness", "description": "Luhn 校验实现中奇偶位搞反"},
+      {"category": "security", "description": "银行卡号未做日志脱敏处理"},
+      {"category": "correctness", "description": "BIN 号对照表不完整或过时"}
+    ]
+  },
+  {
+    "id": "func_011",
+    "task": "实现一个数据校验装饰器，支持对函数参数进行类型检查和范围校验",
+    "language": "python",
+    "difficulty": "easy",
+    "known_issues": [
+      {"category": "correctness", "description": "不支持 *args 和 **kwargs 的校验"},
+      {"category": "correctness", "description": "类型检查不支持 Union、Optional 等泛型类型"},
+      {"category": "performance", "description": "每次调用都重新解析类型注解，未做缓存"}
+    ]
+  },
+  {
+    "id": "func_012",
+    "task": "实现一个函数，对比两个 JSON 对象的差异，返回新增、删除、修改的字段列表",
+    "language": "python",
+    "difficulty": "hard",
+    "known_issues": [
+      {"category": "correctness", "description": "数组对比只按索引比较，未处理元素顺序变化"},
+      {"category": "correctness", "description": "未处理循环引用"},
+      {"category": "performance", "description": "深层嵌套对象递归比较性能差"}
+    ]
+  },
+  {
+    "id": "func_013",
+    "task": "实现一个函数，将 Markdown 文本转换为纯文本，去除所有格式标记",
+    "language": "python",
+    "difficulty": "hard",
+    "known_issues": [
+      {"category": "correctness", "description": "未处理代码块中的 Markdown 语法（不应去除）"},
+      {"category": "correctness", "description": "未处理 HTML 标签嵌入"},
+      {"category": "correctness", "description": "表格转换后丢失对齐信息"}
+    ]
+  },
+  {
+    "id": "api_004",
+    "task": "实现商品搜索接口，支持关键词、价格区间、分类筛选和分页",
+    "language": "python",
+    "framework": "fastapi",
+    "difficulty": "medium",
+    "known_issues": [
+      {"category": "security", "description": "搜索关键词未防 SQL 注入"},
+      {"category": "performance", "description": "LIKE '%keyword%' 全表扫描，未使用全文索引"},
+      {"category": "correctness", "description": "分页使用 OFFSET 方式，大偏移量性能急剧下降"},
+      {"category": "correctness", "description": "并发修改时分页结果可能重复或遗漏"}
+    ]
+  },
+  {
+    "id": "api_005",
+    "task": "实现用户修改密码接口，需验证旧密码并强制更新所有已登录设备的 token",
+    "language": "python",
+    "framework": "fastapi",
+    "difficulty": "medium",
+    "known_issues": [
+      {"category": "security", "description": "旧密码验证和新密码设置不是原子操作"},
+      {"category": "security", "description": "新密码未做强度校验（大小写、数字、特殊字符）"},
+      {"category": "correctness", "description": "token 失效依赖黑名单机制，未实现或清理策略缺失"},
+      {"category": "security", "description": "修改密码接口本身未做限流，可被暴力破解旧密码"}
+    ]
+  },
+  {
+    "id": "api_006",
+    "task": "实现订单创建接口，需检查库存、计算价格、生成订单号，支持优惠券抵扣",
+    "language": "python",
+    "framework": "fastapi",
+    "difficulty": "medium",
+    "known_issues": [
+      {"category": "correctness", "description": "库存检查和扣减不在同一事务内，可能超卖"},
+      {"category": "security", "description": "优惠券金额从前端传入，未做后端校验"},
+      {"category": "correctness", "description": "并发下订单号可能重复"},
+      {"category": "performance", "description": "价格计算涉及多次数据库查询，未做批量优化"}
+    ]
+  },
+  {
+    "id": "api_007",
+    "task": "实现数据导出接口，支持将查询结果导出为 CSV 和 Excel 格式，支持大数据量流式下载",
+    "language": "python",
+    "framework": "fastapi",
+    "difficulty": "medium",
+    "known_issues": [
+      {"category": "performance", "description": "一次性加载全部数据到内存，大数据量时 OOM"},
+      {"category": "security", "description": "导出内容中的公式未转义，可能被 CSV 注入攻击"},
+      {"category": "correctness", "description": "中文文件名在某些浏览器下乱码"},
+      {"category": "correctness", "description": "并发导出请求未做限制，可能耗尽服务器资源"}
+    ]
+  },
+  {
+    "id": "api_008",
+    "task": "实现图片缩略图生成接口，支持指定尺寸、裁剪模式和输出格式",
+    "language": "python",
+    "framework": "fastapi",
+    "difficulty": "medium",
+    "known_issues": [
+      {"category": "security", "description": "未限制源图片 URL，可被 SSRF 攻击访问内网资源"},
+      {"category": "performance", "description": "缩略图未做缓存，相同请求重复生成"},
+      {"category": "correctness", "description": "未处理 EXIF 旋转信息，缩略图方向可能错误"},
+      {"category": "security", "description": "图片处理库存在已知的 zip bomb / 像素炸弹漏洞未防护"}
+    ]
+  },
+  {
+    "id": "api_009",
+    "task": "实现 OAuth2 第三方登录接口，支持微信和 GitHub 授权登录并绑定本地账号",
+    "language": "python",
+    "framework": "fastapi",
+    "difficulty": "medium",
+    "known_issues": [
+      {"category": "security", "description": "state 参数未校验，存在 CSRF 攻击风险"},
+      {"category": "security", "description": "access_token 存储在数据库未加密"},
+      {"category": "correctness", "description": "同一第三方账号重复绑定时逻辑混乱"},
+      {"category": "correctness", "description": "第三方 API 调用超时未设置，可能阻塞请求"}
+    ]
+  },
+  {
+    "id": "api_010",
+    "task": "实现用户操作审计日志接口，记录所有敏感操作并支持按时间范围和操作类型查询",
+    "language": "python",
+    "framework": "fastapi",
+    "difficulty": "medium",
+    "known_issues": [
+      {"category": "security", "description": "日志中记录了完整的请求体，可能包含密码等敏感信息"},
+      {"category": "performance", "description": "审计日志同步写入数据库，增加接口延迟"},
+      {"category": "correctness", "description": "时间范围查询未考虑时区转换"},
+      {"category": "security", "description": "审计日志接口本身未做权限校验，普通用户可查看"}
+    ]
+  },
+  {
+    "id": "api_011",
+    "task": "实现短链接生成和跳转服务，支持自定义短码、过期时间和访问统计",
+    "language": "python",
+    "framework": "fastapi",
+    "difficulty": "medium",
+    "known_issues": [
+      {"category": "security", "description": "未校验目标 URL 合法性，可能被用于钓鱼攻击"},
+      {"category": "correctness", "description": "短码生成算法在高并发下可能冲突"},
+      {"category": "performance", "description": "每次跳转都查数据库，未使用缓存"},
+      {"category": "security", "description": "访问统计接口未做认证，任何人可查看"}
+    ]
+  },
+  {
+    "id": "api_012",
+    "task": "实现邮件验证码发送接口，支持注册、密码重置等场景，限制发送频率",
+    "language": "python",
+    "framework": "fastapi",
+    "difficulty": "medium",
+    "known_issues": [
+      {"category": "security", "description": "验证码为纯数字4位，组合空间太小易被暴力破解"},
+      {"category": "security", "description": "频率限制只基于邮箱，未限制同 IP 对不同邮箱的轰炸"},
+      {"category": "correctness", "description": "验证码校验后未立即失效，可被重放"},
+      {"category": "performance", "description": "邮件发送是同步操作，阻塞请求响应"}
+    ]
+  },
+  {
+    "id": "api_013",
+    "task": "实现评论系统接口，支持多级嵌套回复、点赞、按热度排序",
+    "language": "python",
+    "framework": "fastapi",
+    "difficulty": "medium",
+    "known_issues": [
+      {"category": "security", "description": "评论内容未做 XSS 过滤和敏感词检测"},
+      {"category": "performance", "description": "递归查询嵌套评论产生 N+1 查询问题"},
+      {"category": "correctness", "description": "热度排序算法未考虑时间衰减因子"},
+      {"category": "correctness", "description": "点赞接口无幂等性保证，可重复点赞"}
+    ]
+  },
+  {
+    "id": "func_014",
+    "task": "实现一个数据管道处理器，支持链式调用 map、filter、reduce 操作，处理大规模数据集",
+    "language": "python",
+    "difficulty": "medium",
+    "known_issues": [
+      {"category": "performance", "description": "每步操作都生成中间列表，未使用惰性求值"},
+      {"category": "correctness", "description": "异常处理中断整个管道，未支持跳过错误记录"},
+      {"category": "correctness", "description": "reduce 初始值缺失时空集合报错"}
+    ]
+  },
+  {
+    "id": "func_015",
+    "task": "实现一个配置管理器，支持从环境变量、YAML 文件和命令行参数加载配置，按优先级合并",
+    "language": "python",
+    "difficulty": "medium",
+    "known_issues": [
+      {"category": "security", "description": "YAML 加载使用 yaml.load() 而非 safe_load()，存在代码执行风险"},
+      {"category": "correctness", "description": "深层嵌套配置合并时覆盖而非递归合并"},
+      {"category": "correctness", "description": "类型转换不一致（环境变量都是字符串，但配置期望整数或布尔值）"}
+    ]
+  },
+  {
+    "id": "complex_005",
+    "task": "实现一个支付网关集成模块，对接支付宝和微信支付，处理支付回调和退款逻辑",
+    "language": "python",
+    "difficulty": "hard",
+    "known_issues": [
+      {"category": "security", "description": "回调签名验证不严格，可能接受伪造的支付通知"},
+      {"category": "correctness", "description": "支付状态机未覆盖所有异常路径（如部分退款后再全额退款）"},
+      {"category": "correctness", "description": "回调幂等性依赖数据库唯一索引，未处理并发回调"},
+      {"category": "security", "description": "支付金额使用浮点数计算，存在精度丢失风险"}
+    ]
+  },
+  {
+    "id": "complex_006",
+    "task": "实现一个事件驱动的工作流引擎，支持状态流转、条件分支、并行节点和超时处理",
+    "language": "python",
+    "difficulty": "hard",
+    "known_issues": [
+      {"category": "correctness", "description": "并行节点的汇聚逻辑未处理部分失败场景"},
+      {"category": "correctness", "description": "状态持久化和事件发布不在同一事务内"},
+      {"category": "performance", "description": "超时检查使用定时轮询，大量任务时效率低下"},
+      {"category": "security", "description": "条件分支表达式使用 eval() 执行，存在代码注入风险"}
+    ]
+  },
+  {
+    "id": "complex_007",
+    "task": "实现一个实时数据同步服务，通过 CDC（Change Data Capture）将 MySQL 变更同步到 Elasticsearch",
+    "language": "python",
+    "difficulty": "hard",
+    "known_issues": [
+      {"category": "correctness", "description": "binlog 位点记录不可靠，重启后可能重复或丢失数据"},
+      {"category": "correctness", "description": "DDL 变更（加减列）未动态更新 ES mapping"},
+      {"category": "performance", "description": "逐条写入 ES，未做批量 bulk 优化"},
+      {"category": "correctness", "description": "事务中多条变更的顺序性未保证"}
+    ]
+  },
+  {
+    "id": "complex_008",
+    "task": "实现一个分布式配置中心客户端，支持配置热更新、版本回滚和灰度发布",
+    "language": "python",
+    "difficulty": "hard",
+    "known_issues": [
+      {"category": "correctness", "description": "配置热更新时正在使用旧配置的请求未优雅过渡"},
+      {"category": "security", "description": "配置传输未加密，敏感配置（数据库密码等）可被嗅探"},
+      {"category": "correctness", "description": "版本回滚只回滚配置值，未回滚关联的代码逻辑变更"},
+      {"category": "performance", "description": "长轮询监听配置变更，连接数随实例数线性增长"}
+    ]
+  },
+  {
+    "id": "complex_009",
+    "task": "实现一个多租户权限管理系统，支持 RBAC 模型、资源隔离和权限继承",
+    "language": "python",
+    "framework": "fastapi",
+    "difficulty": "hard",
+    "known_issues": [
+      {"category": "security", "description": "租户隔离依赖应用层过滤，SQL 查询未强制带 tenant_id"},
+      {"category": "correctness", "description": "权限继承存在循环依赖时死循环"},
+      {"category": "performance", "description": "每次请求都递归计算权限树，未做缓存"},
+      {"category": "security", "description": "超级管理员角色可跨租户操作，未做审计日志"}
+    ]
+  },
+  {
+    "id": "complex_010",
+    "task": "实现一个分布式 ID 生成器，基于 Snowflake 算法，支持多数据中心部署",
+    "language": "python",
+    "difficulty": "hard",
+    "known_issues": [
+      {"category": "correctness", "description": "系统时钟回拨时生成重复 ID"},
+      {"category": "correctness", "description": "机器 ID 分配无中心化管理，可能冲突"},
+      {"category": "performance", "description": "同一毫秒内序列号溢出时阻塞等待下一毫秒"},
+      {"category": "correctness", "description": "ID 中嵌入的时间戳在2039年溢出（41位限制）"}
+    ]
+  },
+  {
+    "id": "complex_011",
+    "task": "实现一个秒杀系统的库存扣减模块，保证高并发下不超卖，支持库存预热和异步下单",
+    "language": "python",
+    "difficulty": "hard",
+    "known_issues": [
+      {"category": "correctness", "description": "Redis 预扣和数据库扣减不一致时无补偿机制"},
+      {"category": "performance", "description": "热点 key 未做分片打散，单 Redis 节点成瓶颈"},
+      {"category": "correctness", "description": "异步下单消息丢失时库存无法回补"},
+      {"category": "security", "description": "接口未做用户级限流，脚本可刷单"}
+    ]
+  },
+  {
+    "id": "complex_012",
+    "task": "实现一个实时推荐系统的在线服务层，接收用户行为事件实时更新用户画像并返回推荐结果",
+    "language": "python",
+    "framework": "fastapi",
+    "difficulty": "hard",
+    "known_issues": [
+      {"category": "performance", "description": "用户画像更新与推荐计算同步执行，P99 延迟过高"},
+      {"category": "correctness", "description": "冷启动用户无历史行为时返回空结果而非兜底策略"},
+      {"category": "security", "description": "推荐结果未过滤已下架或违规商品"},
+      {"category": "correctness", "description": "行为事件乱序到达时画像更新结果不确定"}
+    ]
+  },
+  {
+    "id": "complex_013",
+    "task": "实现一个数据库连接池管理器，支持连接复用、健康检查、自动扩缩容和慢查询监控",
+    "language": "python",
+    "difficulty": "hard",
+    "known_issues": [
+      {"category": "correctness", "description": "连接归还时未重置事务状态和会话变量"},
+      {"category": "performance", "description": "健康检查使用 SELECT 1 占用连接，高负载时加剧连接不足"},
+      {"category": "correctness", "description": "缩容时强制关闭正在使用的连接导致请求失败"},
+      {"category": "security", "description": "慢查询日志记录了完整 SQL，包含用户隐私数据"}
+    ]
+  },
+  {
+    "id": "complex_014",
+    "task": "实现一个对账系统，定时比对交易流水和支付渠道账单，生成差异报告并自动发起调账",
+    "language": "python",
+    "difficulty": "hard",
+    "known_issues": [
+      {"category": "correctness", "description": "跨日交易的时区处理不一致导致假差异"},
+      {"category": "performance", "description": "全量加载账单到内存比对，百万级数据时 OOM"},
+      {"category": "correctness", "description": "自动调账未做金额阈值限制，异常数据可能触发大额调整"},
+      {"category": "security", "description": "账单文件从 FTP 下载时未校验签名，可能被篡改"}
+    ]
+  },
+  {
+    "id": "complex_015",
+    "task": "实现一个灰度发布控制系统，支持按用户 ID、百分比、地区等维度的流量分配",
+    "language": "python",
+    "framework": "fastapi",
+    "difficulty": "hard",
+    "known_issues": [
+      {"category": "correctness", "description": "哈希取模的流量分配不均匀，尤其在小样本时"},
+      {"category": "correctness", "description": "多维度条件叠加时优先级规则不明确"},
+      {"category": "performance", "description": "每次请求都查询灰度规则表，未本地缓存"},
+      {"category": "security", "description": "灰度规则变更 API 无审批流程，任何管理员可随意修改"}
+    ]
+  },
+  {
+    "id": "complex_016",
+    "task": "实现一个分布式事务协调器，基于 Saga 模式，管理跨服务的业务补偿逻辑",
+    "language": "python",
+    "difficulty": "hard",
+    "known_issues": [
+      {"category": "correctness", "description": "补偿操作本身失败时未做递归重试或人工介入机制"},
+      {"category": "correctness", "description": "事务状态持久化与消息发送不在同一本地事务内"},
+      {"category": "performance", "description": "串行执行所有步骤，未识别可并行的子事务"},
+      {"category": "security", "description": "事务日志明文存储业务数据，含敏感用户信息"}
+    ]
+  },
+  {
+    "id": "complex_017",
+    "task": "实现一个 API Gateway 网关层，支持路由转发、请求聚合、协议转换和熔断降级",
+    "language": "python",
+    "framework": "fastapi",
+    "difficulty": "hard",
+    "known_issues": [
+      {"category": "security", "description": "请求转发时未过滤 hop-by-hop 头部，泄露内部信息"},
+      {"category": "correctness", "description": "熔断器半开状态的探测逻辑有竞态条件"},
+      {"category": "performance", "description": "请求聚合串行调用多个下游服务，未做并发调用"},
+      {"category": "correctness", "description": "超时设置不合理，下游慢响应导致网关连接池耗尽"}
+    ]
+  },
+  {
+    "id": "complex_018",
+    "task": "实现一个在线考试系统的防作弊模块，检测切屏、复制粘贴和多设备同时登录",
+    "language": "python",
+    "framework": "fastapi",
+    "difficulty": "hard",
+    "known_issues": [
+      {"category": "security", "description": "切屏检测仅依赖前端事件上报，可被篡改或绕过"},
+      {"category": "correctness", "description": "多设备检测基于 session 而非 WebSocket 心跳，延迟高"},
+      {"category": "correctness", "description": "网络断开重连后误判为作弊行为"},
+      {"category": "security", "description": "考试答案通过明文 API 下发前端，可被抓包获取"}
+    ]
+  },
+  {
+    "id": "api_014",
+    "task": "实现一个通知中心接口，支持站内信、邮件、短信多渠道发送，用户可配置接收偏好",
+    "language": "python",
+    "framework": "fastapi",
+    "difficulty": "medium",
+    "known_issues": [
+      {"category": "performance", "description": "同步逐条发送通知，批量通知时接口超时"},
+      {"category": "correctness", "description": "用户偏好更新后正在队列中的通知仍走旧渠道"},
+      {"category": "security", "description": "通知模板支持变量替换，未过滤模板注入"},
+      {"category": "correctness", "description": "发送失败无重试机制，通知静默丢失"}
+    ]
+  },
+  {
+    "id": "api_015",
+    "task": "实现一个标签管理接口，支持标签的增删改查、标签分组和标签与实体的多对多关联",
+    "language": "python",
+    "framework": "fastapi",
+    "difficulty": "medium",
+    "known_issues": [
+      {"category": "correctness", "description": "删除标签时未清理关联关系，产生孤儿数据"},
+      {"category": "performance", "description": "查询某标签下的所有实体时未分页，数据量大时响应慢"},
+      {"category": "security", "description": "标签名未做长度和特殊字符限制，可存入恶意内容"},
+      {"category": "correctness", "description": "标签合并功能未更新关联表中的旧标签 ID"}
+    ]
+  },
+  {
+    "id": "func_016",
+    "task": "实现一个重试装饰器，支持指数退避、最大重试次数、可重试异常类型配置",
+    "language": "python",
+    "difficulty": "medium",
+    "known_issues": [
+      {"category": "correctness", "description": "退避时间未加随机抖动，大量客户端同时重试产生惊群效应"},
+      {"category": "correctness", "description": "异步函数和同步函数未分别处理"},
+      {"category": "performance", "description": "退避等待使用 time.sleep() 阻塞线程而非异步 await"}
+    ]
+  },
+  {
+    "id": "func_017",
+    "task": "实现一个并发任务编排器，支持 DAG 依赖关系定义和拓扑排序执行",
+    "language": "python",
+    "difficulty": "medium",
+    "known_issues": [
+      {"category": "correctness", "description": "未检测循环依赖，存在环时死锁"},
+      {"category": "correctness", "description": "某节点失败后依赖它的下游节点仍在等待而非快速失败"},
+      {"category": "performance", "description": "使用线程池而非 asyncio，I/O 密集型任务并发度受限"}
+    ]
   }
 ]

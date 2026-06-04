@@ -15,6 +15,7 @@ from typing import TypedDict, Annotated
 
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.types import interrupt
 
 from app.agents.coder import CoderAgent
 from app.agents.security_attacker import SecurityAttacker
@@ -198,26 +199,53 @@ async def cross_review_node(state: DebateState) -> dict:
     }
 
     new_messages = list(state.get("messages", []))
-    for name, agent in agents.items():
-        if name in state.get("skip_list", []):
-            continue
-        try:
-            response = await agent.speak(ctx, cross_prompt, budget)
-            if response.content.strip():
-                new_messages.append(
-                    {
-                        "agent": name,
-                        "content": f"[交叉审阅] {response.content}",
-                        "round": current_round,
-                        "structured": response.structured,
-                    }
-                )
-        except Exception as e:
-            logger.warning(f"cross_review_{name}_failed", error=str(e))
 
-    return _check_and_return_consensus(
-        {**state, "messages": new_messages}, round_msgs
+    # Parallel cross-review (asyncio.gather instead of serial for loop)
+    active = [
+        (name, agent) for name, agent in agents.items()
+        if name not in state.get("skip_list", [])
+    ]
+
+    async def safe_cross(name, agent):
+        try:
+            return name, await agent.speak(ctx, cross_prompt, budget)
+        except Exception as e:
+            logger.warning("cross_review_%s_failed error=%s", name, e)
+            return name, None
+
+    cross_results = await asyncio.gather(
+        *[safe_cross(n, a) for n, a in active]
     )
+
+    for name, response in cross_results:
+        if response and response.content.strip():
+            new_messages.append(
+                {
+                    "agent": name,
+                    "content": f"[交叉审阅] {response.content}",
+                    "round": current_round,
+                    "structured": response.structured,
+                }
+            )
+
+    # LangGraph interrupt: pause for optional user intervention
+    user_input = interrupt({
+        "type": "round_complete",
+        "round": current_round,
+        "can_skip": ["security", "performance", "correctness"],
+    })
+
+    updated_state = {**state, "messages": new_messages}
+
+    if user_input and isinstance(user_input, dict):
+        if user_input.get("type") == "skip_attacker":
+            skip_list = list(state.get("skip_list", []))
+            skip_list.append(user_input["attacker"])
+            updated_state["skip_list"] = skip_list
+        elif user_input.get("type") == "add_context":
+            updated_state["extra_context"] = user_input.get("content", "")
+
+    return _check_and_return_consensus(updated_state, round_msgs)
 
 
 def _check_and_return_consensus(
