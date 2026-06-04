@@ -4,7 +4,6 @@ import asyncio
 import time
 import logging
 
-from app.engine.orchestrator import DebateOrchestrator
 from app.engine.context import DebateConfig
 from app.api.models.response import DebateResult
 
@@ -59,18 +58,17 @@ class DegradationManager:
         on_progress: callable = None,
         api_key: str | None = None,
     ) -> DebateResult:
-        orchestrator = DebateOrchestrator()
-
-        # L0: Full adversarial debate
+        # L0: Full adversarial debate via LangGraph
         if self.circuit_breaker.state in ("closed", "half-open"):
             try:
+                from app.engine.graph import run_debate_with_graph
+
                 result = await asyncio.wait_for(
-                    orchestrator.run(
+                    run_debate_with_graph(
                         requirement=requirement,
                         language=language,
                         framework=framework,
                         config=config,
-                        on_progress=on_progress,
                         api_key=api_key,
                     ),
                     timeout=120,
@@ -78,11 +76,14 @@ class DegradationManager:
                 self.circuit_breaker.record_success()
                 return result
             except (asyncio.TimeoutError, Exception) as e:
-                logger.warning("l0_failed error=%s", e)
+                logger.warning("l0_langgraph_failed error=%s", e)
                 self.circuit_breaker.record_failure()
 
-        # L1: Reduced attackers, fewer rounds
+        # L1: Reduced attackers via orchestrator (lighter, no graph overhead)
         try:
+            from app.engine.orchestrator import DebateOrchestrator
+            orchestrator = DebateOrchestrator()
+
             reduced_config = DebateConfig(
                 max_rounds=2,
                 attackers=["correctness"],
@@ -108,6 +109,9 @@ class DegradationManager:
 
         # L2: Single agent generation, no debate
         try:
+            from app.engine.orchestrator import DebateOrchestrator
+            orchestrator = DebateOrchestrator()
+
             no_debate_config = DebateConfig(
                 max_rounds=1,
                 attackers=[],
