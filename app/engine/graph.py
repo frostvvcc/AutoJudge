@@ -312,11 +312,18 @@ def _check_and_return_consensus(
 
     result = consensus_detector.check_consensus(debate_msgs)
 
-    return {
+    update = {
         "consensus": result,
         "converged": result.get("converged", False),
         "budget_spent": state.get("budget_spent", 0),
     }
+    if state.get("messages"):
+        update["messages"] = state["messages"]
+    if "skip_list" in state:
+        update["skip_list"] = state["skip_list"]
+    if "extra_context" in state:
+        update["extra_context"] = state["extra_context"]
+    return update
 
 
 def check_consensus_edge(state: DebateState) -> str:
@@ -624,6 +631,6 @@ async def run_debate_with_graph(
         metadata={"engine": "langgraph", "thread_id": thread_id},
     )
 
-    _progress_callback = None
     await _notify({"type": "done"})
+    _progress_callback = None
     return result

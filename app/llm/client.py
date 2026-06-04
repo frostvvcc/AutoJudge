@@ -451,6 +451,8 @@ async def _call_anthropic_api(
     messages: list[dict],
     model: str | None = None,
     max_tokens: int = 4000,
+    tools: list[dict] | None = None,
+    tool_choice: dict | None = None,
 ) -> AgentResponse:
     """Call Anthropic API directly with tool_use structured output.
 
@@ -462,7 +464,9 @@ async def _call_anthropic_api(
     from app.llm.model_router import get_model_for_agent
 
     client = _get_anthropic_client()
-    tools, tool_choice = _get_tools_for_agent(agent)
+    default_tools, default_tool_choice = _get_tools_for_agent(agent)
+    tools = tools or default_tools
+    tool_choice = tool_choice or default_tool_choice
     resolved_model = model or get_model_for_agent(agent)
 
     system_blocks = [
@@ -595,4 +599,6 @@ async def call_agent(
             messages=messages,
             model=model,
             max_tokens=max_tokens,
+            tools=tools,
+            tool_choice=tool_choice,
         )
