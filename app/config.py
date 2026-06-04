@@ -20,9 +20,13 @@ class Settings(BaseSettings):
     claude_cli_model: str = Field(default="", alias="CLAUDE_CLI_MODEL")
     claude_cli_timeout: int = Field(default=120, alias="CLAUDE_CLI_TIMEOUT")
 
+    # Anthropic-compatible proxy settings (when llm_backend = "anthropic_proxy")
+    anthropic_proxy_base_url: str = Field(default="", alias="ANTHROPIC_PROXY_BASE_URL")
+    anthropic_proxy_api_key: str = Field(default="", alias="ANTHROPIC_PROXY_API_KEY")
+
     # Model names (used when llm_backend = "anthropic_api")
-    default_model: str = "claude-sonnet-4-20250514"
-    haiku_model: str = "claude-haiku-4-5-20251001"
+    default_model: str = Field(default="claude-opus-4-6", alias="DEFAULT_MODEL")
+    haiku_model: str = Field(default="claude-opus-4-6", alias="HAIKU_MODEL")
 
     embedding_model: str = "text-embedding-3-small"
 

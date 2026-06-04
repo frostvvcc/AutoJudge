@@ -79,9 +79,28 @@ TEST_JSON_SCHEMA = {
     "test_code": "(string) 完整的 pytest 测试代码",
 }
 
+PLAN_JSON_SCHEMA = {
+    "plan_a": {
+        "label": "(string) 方案标签",
+        "tech_stack": "(string) 技术选型",
+        "core_flow": "(string) 核心流程",
+        "security": "(string) 安全考虑",
+        "not_included": "(string) 不包含什么",
+    },
+    "plan_b": {
+        "label": "(string) 方案标签",
+        "tech_stack": "(string) 技术选型",
+        "core_flow": "(string) 核心流程",
+        "security": "(string) 安全考虑",
+        "not_included": "(string) 不包含什么",
+    },
+    "recommendation": "(string) 推荐理由",
+}
+
 # Schema registry: agent name → which JSON schema to require
 AGENT_SCHEMAS = {
     "coder": CODER_JSON_SCHEMA,
+    "planner": PLAN_JSON_SCHEMA,
     "security": ATTACKER_JSON_SCHEMA,
     "performance": ATTACKER_JSON_SCHEMA,
     "correctness": ATTACKER_JSON_SCHEMA,
@@ -469,22 +488,31 @@ async def _execute_coder_tool(tool_name: str, tool_input: dict) -> str:
 
 
 async def _run_code_snippet(code: str, expected: str) -> str:
-    """Run a code snippet in a subprocess sandbox and return output."""
+    """Run a code snippet in Docker sandbox with resource limits."""
     import tempfile
 
-    with tempfile.NamedTemporaryFile(
-        suffix=".py", mode="w", delete=False
-    ) as f:
-        f.write(code)
-        f.flush()
+    with tempfile.TemporaryDirectory() as tmpdir:
+        code_path = f"{tmpdir}/snippet.py"
+        with open(code_path, "w") as f:
+            f.write(code)
+
         try:
             proc = await asyncio.create_subprocess_exec(
-                "python", f.name,
+                "docker", "run", "--rm",
+                "--network=none",
+                "--read-only",
+                "--memory=256m",
+                "--cpus=0.5",
+                "-v", f"{tmpdir}:/workspace:ro",
+                "-w", "/workspace",
+                "--tmpfs", "/tmp:size=64m",
+                "autojudge-sandbox:latest",
+                "python", "snippet.py",
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
             stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=10
+                proc.communicate(), timeout=15
             )
             output = stdout.decode("utf-8", errors="replace")
             errors = stderr.decode("utf-8", errors="replace")
@@ -493,9 +521,9 @@ async def _run_code_snippet(code: str, expected: str) -> str:
             else:
                 return f"Execution failed (exit {proc.returncode}).\nStderr:\n{errors}\nExpected: {expected}"
         except asyncio.TimeoutError:
-            return "Execution timed out after 10s."
+            return "Execution timed out after 15s."
         except FileNotFoundError:
-            return "Python not available for code execution."
+            return "Docker is not available. Code verification requires Docker for sandbox isolation."
 
 
 async def _call_anthropic_api(
@@ -594,6 +622,122 @@ async def _call_anthropic_api(
     return result
 
 
+
+# ─── Backend 3: Anthropic-compatible proxy (httpx direct) ──────────────────
+
+async def _call_anthropic_proxy(
+    agent: str,
+    system_prompt: str,
+    messages: list[dict],
+    model: str | None = None,
+    max_tokens: int = 4000,
+    tools: list[dict] | None = None,
+    tool_choice: dict | None = None,
+) -> AgentResponse:
+    """Call Anthropic-compatible proxy via httpx (bypasses SDK header issues)."""
+    import httpx
+    from app.llm.model_router import get_model_for_agent
+
+    default_tools, default_tool_choice = _get_tools_for_agent(agent)
+    tools = tools or default_tools
+    tool_choice = tool_choice or default_tool_choice
+    resolved_model = model or get_model_for_agent(agent)
+
+    body: dict = {
+        "model": resolved_model,
+        "max_tokens": max_tokens,
+        "system": system_prompt,
+        "messages": messages,
+    }
+    if tools:
+        body["tools"] = tools
+    if tool_choice:
+        body["tool_choice"] = tool_choice
+
+    start = time.monotonic()
+
+    conv_messages = list(messages)
+    total_tokens = 0
+    max_tool_turns = 5 if agent == "coder" else 0
+
+    async with httpx.AsyncClient(timeout=120) as http:
+        for turn in range(max_tool_turns + 1):
+            body["messages"] = conv_messages
+            effective_choice = {"type": "any"} if agent == "coder" else tool_choice
+            if effective_choice:
+                body["tool_choice"] = effective_choice
+
+            resp = await http.post(
+                f"{settings.anthropic_proxy_base_url}/v1/messages",
+                headers={
+                    "x-api-key": settings.anthropic_proxy_api_key,
+                    "anthropic-version": "2023-06-01",
+                    "Content-Type": "application/json",
+                },
+                json=body,
+            )
+
+            if resp.status_code != 200:
+                raise RuntimeError(f"Proxy API error {resp.status_code}: {resp.text[:300]}")
+
+            data = resp.json()
+            usage = data.get("usage", {})
+            total_tokens += usage.get("input_tokens", 0) + usage.get("output_tokens", 0)
+
+            if agent != "coder" or data.get("stop_reason") != "tool_use":
+                break
+
+            # Coder tool_use loop
+            pending_tool_calls = []
+            has_submit = False
+            for block in data.get("content", []):
+                if block.get("type") == "tool_use":
+                    if block.get("name") == "submit_response":
+                        has_submit = True
+                    else:
+                        pending_tool_calls.append(block)
+
+            if has_submit or not pending_tool_calls:
+                break
+
+            conv_messages.append({"role": "assistant", "content": data["content"]})
+            tool_results = []
+            for tc in pending_tool_calls:
+                result_text = await _execute_coder_tool(tc["name"], tc.get("input", {}))
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": tc["id"],
+                    "content": result_text,
+                })
+            conv_messages.append({"role": "user", "content": tool_results})
+
+    elapsed_ms = int((time.monotonic() - start) * 1000)
+
+    # Parse response
+    content_text = ""
+    structured = None
+    code = None
+
+    for block in data.get("content", []):
+        if block.get("type") == "text":
+            content_text += block.get("text", "")
+        elif block.get("type") == "tool_use":
+            structured = block.get("input", {})
+            if "message" in structured:
+                content_text = structured["message"]
+            if "updated_code" in structured:
+                code = structured["updated_code"]
+
+    return AgentResponse(
+        agent=agent,
+        content=content_text,
+        code=code,
+        structured=structured,
+        tokens_used=total_tokens,
+        latency_ms=elapsed_ms,
+    )
+
+
 # ─── Unified entry point ─────────────────────────────────────────────────────
 
 def _is_retryable(exc: BaseException) -> bool:
@@ -642,6 +786,16 @@ async def call_agent(
             system_prompt=system_prompt,
             messages=messages,
             max_tokens=max_tokens,
+        )
+    elif settings.llm_backend == "anthropic_proxy":
+        return await _call_anthropic_proxy(
+            agent=agent,
+            system_prompt=system_prompt,
+            messages=messages,
+            model=model,
+            max_tokens=max_tokens,
+            tools=tools,
+            tool_choice=tool_choice,
         )
     else:
         return await _call_anthropic_api(
