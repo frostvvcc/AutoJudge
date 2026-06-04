@@ -225,8 +225,9 @@ def _build_structured_prompt(
         schema_str = json.dumps(schema, ensure_ascii=False, indent=2)
         parts.append(
             f"\n[输出要求]\n"
-            f"你必须以 JSON 格式回复，严格遵守以下 schema。"
-            f"不要输出任何 JSON 以外的内容，不要用 markdown 代码块包裹。\n"
+            f"在完成所有分析和验证后，你的最终回复必须是一个纯 JSON 对象。"
+            f"严格遵守以下 schema，不要在 JSON 前后添加任何其他文字。"
+            f"如果你需要执行代码来验证，先执行完，然后再输出 JSON 结果。\n"
             f"Schema:\n{schema_str}"
         )
 
@@ -236,37 +237,48 @@ def _build_structured_prompt(
 def _extract_json_from_text(text: str) -> dict | None:
     """
     Extract JSON object from claude -p output.
-    Handles cases where the model wraps JSON in markdown code blocks.
+    Handles: direct JSON, markdown code blocks, JSON embedded in prose.
     """
     cleaned = text.strip()
 
-    # Strip markdown code fences if present
-    if cleaned.startswith("```"):
-        lines = cleaned.split("\n")
-        # Remove first line (```json or ```) and last line (```)
-        start = 1
-        end = len(lines)
-        for i in range(len(lines) - 1, 0, -1):
-            if lines[i].strip() == "```":
-                end = i
-                break
-        cleaned = "\n".join(lines[start:end]).strip()
-
-    # Try direct parse
+    # Try direct parse first
     try:
         return json.loads(cleaned)
     except json.JSONDecodeError:
         pass
 
-    # Try to find JSON object in text
-    match = re.search(r'\{[\s\S]*\}', cleaned)
-    if match:
+    # Extract from markdown code blocks (```json ... ``` or ``` ... ```)
+    code_block_pattern = re.compile(r"```(?:json)?\s*\n([\s\S]*?)\n\s*```")
+    for match in code_block_pattern.finditer(cleaned):
         try:
-            return json.loads(match.group())
+            parsed = json.loads(match.group(1).strip())
+            if isinstance(parsed, dict):
+                return parsed
         except json.JSONDecodeError:
-            pass
+            continue
 
-    return None
+    # Find the last JSON object in text (most likely the final output)
+    brace_depth = 0
+    json_start = -1
+    last_json = None
+    for i, ch in enumerate(cleaned):
+        if ch == "{":
+            if brace_depth == 0:
+                json_start = i
+            brace_depth += 1
+        elif ch == "}":
+            brace_depth -= 1
+            if brace_depth == 0 and json_start >= 0:
+                candidate = cleaned[json_start : i + 1]
+                try:
+                    parsed = json.loads(candidate)
+                    if isinstance(parsed, dict):
+                        last_json = parsed
+                except json.JSONDecodeError:
+                    pass
+                json_start = -1
+
+    return last_json
 
 
 async def _call_claude_cli(
@@ -278,13 +290,23 @@ async def _call_claude_cli(
     """
     Call claude -p (Claude Code piped mode) as subprocess.
     No API key needed — uses your logged-in Claude Code session.
+
+    Uses --output-format json for structured result parsing,
+    --max-turns 5 for multi-turn tool use (Coder self-test),
+    --dangerously-skip-permissions to avoid interactive prompts.
     """
     prompt = _build_structured_prompt(system_prompt, messages, agent)
 
-    cmd = [settings.claude_cli_path, "-p", "--output-format", "text"]
+    max_turns = "5" if agent == "coder" else "1"
+
+    cmd = [
+        settings.claude_cli_path, "-p",
+        "--output-format", "json",
+        "--dangerously-skip-permissions",
+        "--max-turns", max_turns,
+    ]
     if settings.claude_cli_model:
         cmd.extend(["--model", settings.claude_cli_model])
-    cmd.extend(["--max-turns", "1"])
 
     start = time.monotonic()
 
@@ -306,16 +328,27 @@ async def _call_claude_cli(
 
     elapsed_ms = int((time.monotonic() - start) * 1000)
 
+    raw_stdout = stdout.decode("utf-8", errors="replace").strip()
+
     if proc.returncode != 0:
         err_msg = stderr.decode("utf-8", errors="replace").strip()
         raise RuntimeError(f"claude -p failed (exit {proc.returncode}): {err_msg[:500]}")
 
-    raw_output = stdout.decode("utf-8", errors="replace").strip()
-
-    if not raw_output:
+    if not raw_stdout:
         raise RuntimeError(f"claude -p returned empty output for agent {agent}")
 
-    # Parse structured JSON from output
+    # Parse the JSON envelope from --output-format json
+    raw_output = raw_stdout
+    actual_tokens = 0
+    try:
+        envelope = json.loads(raw_stdout)
+        raw_output = envelope.get("result", raw_stdout)
+        usage = envelope.get("usage", {})
+        actual_tokens = usage.get("input_tokens", 0) + usage.get("output_tokens", 0)
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    # Extract structured JSON from the result text
     structured = _extract_json_from_text(raw_output)
     content = ""
     code = None
@@ -327,17 +360,26 @@ async def _call_claude_cli(
             content = structured["test_code"]
     else:
         content = raw_output
-        logger.warning("json_parse_failed agent=%s raw_length=%d", agent, len(raw_output))
+        # Fallback: extract code blocks from natural language output
+        code_blocks = re.findall(r"```(?:python)?\s*\n([\s\S]*?)\n\s*```", raw_output)
+        if code_blocks:
+            code = max(code_blocks, key=len)
+            structured = {
+                "message": raw_output,
+                "updated_code": code,
+                "responses": [],
+            }
+        if not code_blocks:
+            logger.warning("json_parse_failed agent=%s raw_length=%d", agent, len(raw_output))
 
-    # Estimate token count from character length (~1.5 chars/token for mixed CJK+English)
-    estimated_tokens = len(prompt + raw_output) // 2
+    tokens_used = actual_tokens if actual_tokens > 0 else len(prompt + raw_output) // 2
 
     return AgentResponse(
         agent=agent,
         content=content,
         code=code,
         structured=structured,
-        tokens_used=estimated_tokens,
+        tokens_used=tokens_used,
         latency_ms=elapsed_ms,
     )
 
