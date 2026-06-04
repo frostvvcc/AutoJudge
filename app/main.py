@@ -1,16 +1,19 @@
 from __future__ import annotations
 
 import logging
+from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 
+from app.api.routes.auth import router as auth_router
 from app.api.routes.generate import router as generate_router
 from app.api.routes.health import router as health_router
-from app.api.middleware.auth import AuthMiddleware
-from app.tracing.tracer import setup_langsmith
+from app.api.routes.history import router as history_router
 from app.config import settings
+from app.db.engine import engine
+from app.db.models import Base
+from app.tracing.tracer import setup_langsmith
 
 logging.basicConfig(
     level=logging.DEBUG if settings.debug else logging.INFO,
@@ -19,10 +22,20 @@ logging.basicConfig(
 
 setup_langsmith()
 
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield
+    await engine.dispose()
+
+
 app = FastAPI(
     title="AutoJudge",
     description="多维对抗式代码进化引擎",
-    version="0.1.0",
+    version="0.2.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -33,26 +46,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-auth_middleware = AuthMiddleware()
-
-
-@app.middleware("http")
-async def auth_and_rate_limit(request: Request, call_next):
-    if request.url.path.startswith("/api/v1/generate"):
-        try:
-            api_key = await auth_middleware.authenticate(request)
-            await auth_middleware.check_rate_limit(api_key)
-            request.state.api_key = api_key
-        except Exception as e:
-            return JSONResponse(
-                status_code=getattr(e, "status_code", 401),
-                content={"detail": str(getattr(e, "detail", e))},
-            )
-    return await call_next(request)
-
-
 app.include_router(health_router)
+app.include_router(auth_router)
 app.include_router(generate_router)
+app.include_router(history_router)
 
 
 if __name__ == "__main__":

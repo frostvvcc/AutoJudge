@@ -33,6 +33,34 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/2"
     chromadb_path: str = "./data/chromadb"
 
+    # MySQL
+    mysql_host: str = Field(default="localhost", alias="MYSQL_HOST")
+    mysql_port: int = Field(default=3306, alias="MYSQL_PORT")
+    mysql_user: str = Field(default="root", alias="MYSQL_USER")
+    mysql_password: str = Field(default="", alias="MYSQL_PASSWORD")
+    mysql_database: str = Field(default="autojudge", alias="MYSQL_DATABASE")
+
+    @property
+    def database_url(self) -> str:
+        return (
+            f"mysql+aiomysql://{self.mysql_user}:{self.mysql_password}"
+            f"@{self.mysql_host}:{self.mysql_port}/{self.mysql_database}"
+            f"?charset=utf8mb4"
+        )
+
+    # JWT
+    jwt_secret: str = Field(
+        default="autojudge-dev-secret-change-in-production",
+        alias="JWT_SECRET",
+    )
+    jwt_algorithm: str = "HS256"
+    jwt_access_token_expire_minutes: int = Field(
+        default=60 * 24, alias="JWT_ACCESS_EXPIRE_MINUTES"
+    )
+    jwt_refresh_token_expire_days: int = Field(
+        default=30, alias="JWT_REFRESH_EXPIRE_DAYS"
+    )
+
     max_concurrent_debates: int = 5
     max_concurrent_llm_calls: int = 20
 

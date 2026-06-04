@@ -2,11 +2,18 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime, timezone
 
-from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, Request, WebSocket, WebSocketDisconnect
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.models.request import GenerateRequest
 from app.api.models.response import DebateResult
+from app.auth.deps import get_current_user
+from app.auth.jwt import decode_token
+from app.db.engine import async_session
+from app.db.models import DebateMessage as DBMessage, DebateSession, User
 from app.engine.context import DebateConfig
 from app.engine.degradation import DegradationManager
 from app.engine.resource_manager import ResourceManager
@@ -18,8 +25,64 @@ degradation_mgr = DegradationManager()
 resource_mgr = ResourceManager()
 
 
+async def _save_session(
+    user_id: int,
+    task: str,
+    language: str,
+    framework: str | None,
+    config: DebateConfig,
+    result: DebateResult,
+    messages: list[dict],
+) -> str:
+    async with async_session() as db:
+        session = DebateSession(
+            user_id=user_id,
+            task=task,
+            language=language,
+            framework=framework,
+            config_json={
+                "max_rounds": config.max_rounds,
+                "attackers": config.attackers,
+                "model": config.model,
+                "max_tokens": config.max_tokens,
+            },
+            status="done",
+            result_code=result.code or None,
+            confidence=result.confidence,
+            converged=result.converged,
+            convergence_reason=result.convergence_reason or None,
+            summary_json=result.summary.model_dump() if result.summary else None,
+            risk_json=result.risk_assessment.model_dump() if result.risk_assessment else None,
+            metrics_json=result.metrics.model_dump() if result.metrics else None,
+            total_rounds=result.metrics.total_rounds if result.metrics else 0,
+            total_tokens=result.metrics.total_tokens if result.metrics else 0,
+            total_latency_ms=result.metrics.total_latency_ms if result.metrics else 0,
+            cost_usd=result.metrics.cost_usd if result.metrics else 0.0,
+            finished_at=datetime.now(timezone.utc),
+        )
+        db.add(session)
+        await db.flush()
+
+        for msg in messages:
+            db.add(DBMessage(
+                session_id=session.id,
+                agent=msg.get("agent", "system"),
+                content=msg.get("content", ""),
+                round=msg.get("round", 0),
+                code=msg.get("code"),
+                structured_json=msg.get("structured"),
+            ))
+
+        await db.commit()
+        await db.refresh(session)
+        return session.sid
+
+
 @router.post("/generate", response_model=DebateResult)
-async def generate(request: GenerateRequest, raw_request: Request):
+async def generate(
+    request: GenerateRequest,
+    user: User = Depends(get_current_user),
+):
     config = DebateConfig(
         max_rounds=request.config.max_rounds if request.config else 5,
         attackers=(
@@ -37,7 +100,11 @@ async def generate(request: GenerateRequest, raw_request: Request):
         ),
     )
 
-    api_key = getattr(raw_request.state, "api_key", None)
+    collected_messages: list[dict] = []
+
+    async def collect_progress(event: dict):
+        if event.get("type") == "message":
+            collected_messages.append(event)
 
     async with resource_mgr.acquire_debate_slot():
         result = await degradation_mgr.execute_with_degradation(
@@ -45,8 +112,19 @@ async def generate(request: GenerateRequest, raw_request: Request):
             language=request.language,
             framework=request.framework,
             config=config,
-            api_key=api_key,
+            api_key=None,
+            on_progress=collect_progress,
         )
+
+    await _save_session(
+        user_id=user.id,
+        task=request.task,
+        language=request.language,
+        framework=request.framework,
+        config=config,
+        result=result,
+        messages=collected_messages,
+    )
 
     return result
 
@@ -63,10 +141,16 @@ async def websocket_generate(websocket: WebSocket):
         await websocket.close(code=4000, reason="Authentication timeout")
         return
 
+    user_id: int | None = None
+    token = init_msg.get("token")
+    if token:
+        payload = decode_token(token)
+        if payload and payload.get("type") == "access":
+            user_id = int(payload["sub"])
+
     task = init_msg.get("task", "")
     language = init_msg.get("language", "python")
     framework = init_msg.get("framework")
-    api_key = init_msg.get("api_key")
 
     config_data = init_msg.get("config", {})
     config = DebateConfig(
@@ -83,6 +167,7 @@ async def websocket_generate(websocket: WebSocket):
 
     stop_event = asyncio.Event()
     debate_task: asyncio.Task | None = None
+    collected_messages: list[dict] = []
 
     async def listen_for_intervention():
         nonlocal debate_task
@@ -102,8 +187,6 @@ async def websocket_generate(websocket: WebSocket):
                 elif msg_type == "add_context":
                     extra = msg.get("content", "")
                     if extra:
-                        # Write to the DebateContext that orchestrator
-                        # actually reads during Coder prompt construction
                         orchestrator._live_extra_context = extra
                         logger.info("user_added_context")
                 elif msg_type == "force_stop":
@@ -117,6 +200,8 @@ async def websocket_generate(websocket: WebSocket):
                 break
 
     async def on_progress(event: dict):
+        if event.get("type") == "message":
+            collected_messages.append(event)
         try:
             await websocket.send_json(event)
         except Exception:
@@ -133,7 +218,7 @@ async def websocket_generate(websocket: WebSocket):
                     framework=framework,
                     config=config,
                     on_progress=on_progress,
-                    api_key=api_key,
+                    api_key=None,
                 )
 
             debate_task = asyncio.create_task(run_debate())
@@ -153,9 +238,25 @@ async def websocket_generate(websocket: WebSocket):
                 except asyncio.CancelledError:
                     pass
 
+        session_sid = None
+        if user_id:
+            try:
+                session_sid = await _save_session(
+                    user_id=user_id,
+                    task=task,
+                    language=language,
+                    framework=framework,
+                    config=config,
+                    result=result,
+                    messages=collected_messages,
+                )
+            except Exception as e:
+                logger.error("save_session_failed error=%s", e)
+
         await websocket.send_json({
             "type": "result",
             "data": result.model_dump(),
+            "session_sid": session_sid,
         })
 
     except asyncio.TimeoutError:

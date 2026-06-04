@@ -1,4 +1,6 @@
 import { useCallback } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
+import { useAuth } from './contexts/AuthContext';
 import { useWebSocket } from './hooks/useWebSocket';
 import { useDebateState } from './hooks/useDebateState';
 import InputForm from './components/InputForm';
@@ -8,9 +10,11 @@ import MetricsBar from './components/MetricsBar';
 import RiskGauge from './components/RiskGauge';
 import ConsensusIndicator from './components/ConsensusIndicator';
 
-const WS_URL = `ws://${window.location.hostname}:9000/ws/generate`;
+const WS_URL = `ws://${window.location.host}/ws/generate`;
 
 export default function App() {
+  const { user, logout } = useAuth();
+  const navigate = useNavigate();
   const ws = useWebSocket(WS_URL);
   const debate = useDebateState();
 
@@ -24,10 +28,12 @@ export default function App() {
       });
 
       setTimeout(() => {
+        const token = localStorage.getItem('access_token');
         ws.send({
           type: 'start',
           task,
           language,
+          token,
           config: {
             max_rounds: 5,
             attackers: ['security', 'performance', 'correctness'],
@@ -62,11 +68,35 @@ export default function App() {
               多维对抗式代码进化引擎
             </span>
           </div>
-          {debate.status === 'running' && (
-            <span className="text-sm text-yellow-400 animate-pulse">
-              {debate.statusText}
-            </span>
-          )}
+          <div className="flex items-center gap-4">
+            {debate.status === 'running' && (
+              <span className="text-sm text-yellow-400 animate-pulse">
+                {debate.statusText}
+              </span>
+            )}
+            <span className="text-sm text-blue-400 font-medium">新任务</span>
+            <Link
+              to="/history"
+              className="text-sm text-gray-400 hover:text-white transition-colors"
+            >
+              历史记录
+            </Link>
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-full bg-gray-700 flex items-center justify-center text-xs text-white font-medium">
+                {user?.username?.[0]?.toUpperCase()}
+              </div>
+              <span className="text-sm text-gray-300">{user?.username}</span>
+            </div>
+            <button
+              onClick={() => {
+                logout();
+                navigate('/login');
+              }}
+              className="text-sm text-gray-500 hover:text-red-400 transition-colors"
+            >
+              退出
+            </button>
+          </div>
         </div>
       </header>
 
