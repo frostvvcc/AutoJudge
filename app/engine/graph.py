@@ -349,7 +349,7 @@ async def judge_node(state: DebateState) -> dict:
 _compiled_graph = None
 
 
-async def build_debate_graph():
+def build_debate_graph():
     graph = StateGraph(DebateState)
 
     graph.add_node("coder", coder_node)
@@ -380,20 +380,17 @@ async def build_debate_graph():
     )
     graph.add_edge("judge", END)
 
-    mysql_url = (
-        f"mysql+aiomysql://{settings.mysql_user}:{settings.mysql_password}"
-        f"@{settings.mysql_host}:{settings.mysql_port}/{settings.mysql_database}"
-    )
-    checkpointer = AIOMySQLSaver.from_conn_string(mysql_url)
-    await checkpointer.setup()
-    return graph.compile(checkpointer=checkpointer)
+    return graph
 
 
-async def get_debate_graph():
-    global _compiled_graph
-    if _compiled_graph is None:
-        _compiled_graph = await build_debate_graph()
-    return _compiled_graph
+_uncompiled_graph = None
+
+
+def _get_uncompiled_graph():
+    global _uncompiled_graph
+    if _uncompiled_graph is None:
+        _uncompiled_graph = build_debate_graph()
+    return _uncompiled_graph
 
 
 # ─── Full pipeline: pre-processing → graph → post-processing ───────────────
@@ -487,11 +484,17 @@ async def run_debate_with_graph(
         initial_state["extra_context"] = "\n\n".join(context_parts)
 
     # --- Run the LangGraph graph ---
-    graph = await get_debate_graph()
-    thread_id = str(uuid.uuid4())
-    graph_config = {"configurable": {"thread_id": thread_id}}
-
-    final_state = await graph.ainvoke(initial_state, graph_config)
+    mysql_url = (
+        f"mysql+aiomysql://{settings.mysql_user}:{settings.mysql_password}"
+        f"@{settings.mysql_host}:{settings.mysql_port}/{settings.mysql_database}"
+    )
+    async with AIOMySQLSaver.from_conn_string(mysql_url) as checkpointer:
+        await checkpointer.setup()
+        graph = _get_uncompiled_graph()
+        compiled = graph.compile(checkpointer=checkpointer)
+        thread_id = str(uuid.uuid4())
+        graph_config = {"configurable": {"thread_id": thread_id}}
+        final_state = await compiled.ainvoke(initial_state, graph_config)
 
     # --- Post-processing: TestRunner ---
     final_code = final_state.get("current_code", "")
