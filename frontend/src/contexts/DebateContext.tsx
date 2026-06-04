@@ -30,7 +30,7 @@ const DebateContext = createContext<DebateState | null>(null);
 
 function getWsUrl(): string {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  return `${proto}://${window.location.host}/ws/generate`;
+  return `${proto}://${window.location.host}/api/v1/ws/generate`;
 }
 
 export function DebateProvider({ children }: { children: ReactNode }) {

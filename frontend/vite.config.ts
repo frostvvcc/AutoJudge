@@ -6,9 +6,8 @@ export default defineConfig({
   server: {
     port: 5174,
     proxy: {
-      '/api': 'http://localhost:9000',
-      '/ws': {
-        target: 'ws://localhost:9000',
+      '/api': {
+        target: 'http://localhost:9000',
         ws: true,
       },
     },
