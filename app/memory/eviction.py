@@ -41,4 +41,4 @@ class EvictionManager:
                     count=len(results["ids"]),
                 )
         except Exception as e:
-            logger.warning("eviction_failed", error=str(e))
+            logger.warning("%s: %s", "eviction_failed", e)

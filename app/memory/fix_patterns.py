@@ -24,7 +24,7 @@ class FixPatternStore:
             )
             self._available = True
         except Exception as e:
-            logger.warning("fix_patterns_init_failed", error=str(e))
+            logger.warning("%s: %s", "fix_patterns_init_failed", e)
             self._available = False
 
     async def store_fix(
@@ -55,7 +55,7 @@ class FixPatternStore:
                 ids=[fix_id],
             )
         except Exception as e:
-            logger.warning("store_fix_failed", error=str(e))
+            logger.warning("%s: %s", "store_fix_failed", e)
 
     async def retrieve_fixes(
         self, finding_description: str, top_k: int = 3
@@ -74,5 +74,5 @@ class FixPatternStore:
 
             return results["documents"][0]
         except Exception as e:
-            logger.warning("retrieve_fixes_failed", error=str(e))
+            logger.warning("%s: %s", "retrieve_fixes_failed", e)
             return []

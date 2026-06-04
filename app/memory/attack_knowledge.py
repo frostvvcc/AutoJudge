@@ -25,7 +25,7 @@ class AttackKnowledgeBase:
             )
             self._available = True
         except Exception as e:
-            logger.warning("chromadb_init_failed", error=str(e))
+            logger.warning("%s: %s", "chromadb_init_failed", e)
             self._available = False
 
     async def store_findings(
@@ -65,7 +65,7 @@ class AttackKnowledgeBase:
                     ids=[finding_id],
                 )
             except Exception as e:
-                logger.warning("store_finding_failed", error=str(e))
+                logger.warning("%s: %s", "store_finding_failed", e)
 
     async def retrieve_relevant(
         self, task: str, top_k: int = 5
@@ -93,7 +93,7 @@ class AttackKnowledgeBase:
                 )
             ]
         except Exception as e:
-            logger.warning("retrieve_failed", error=str(e))
+            logger.warning("%s: %s", "retrieve_failed", e)
             return []
 
     def build_experience_prompt(self, experiences: list[dict]) -> str:

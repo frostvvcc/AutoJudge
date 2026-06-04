@@ -26,7 +26,7 @@ class UserPreferenceStore:
                 return {}
             return {k.decode(): v.decode() for k, v in data.items()}
         except Exception as e:
-            logger.warning("get_preferences_failed", error=str(e))
+            logger.warning("%s: %s", "get_preferences_failed", e)
             return {}
 
     async def update_from_request(
@@ -47,7 +47,7 @@ class UserPreferenceStore:
                     f"{self.prefix}{api_key}", mapping=updates
                 )
             except Exception as e:
-                logger.warning("update_preferences_failed", error=str(e))
+                logger.warning("%s: %s", "update_preferences_failed", e)
 
     def build_preference_prompt(self, prefs: dict) -> str:
         if not prefs:
