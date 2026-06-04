@@ -10,6 +10,7 @@ openai>=1.59.0
 
 # LangGraph (Phase 2)
 langgraph>=0.2.62
+langgraph-checkpoint-mysql>=3.0.0
 langchain-core>=0.3.29
 langsmith>=0.2.10
 

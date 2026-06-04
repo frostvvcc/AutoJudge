@@ -5,6 +5,7 @@ import time
 import logging
 
 from app.engine.context import DebateConfig
+from app.engine.result_cache import ResultCache
 from app.api.models.response import DebateResult
 
 logger = logging.getLogger(__name__)
@@ -48,8 +49,51 @@ class DegradationManager:
         self.circuit_breaker = CircuitBreaker(
             failure_threshold=3, recovery_timeout=60
         )
+        self._cache: ResultCache | None = None
+
+    def _get_cache(self) -> ResultCache:
+        if self._cache is None:
+            from app.db.redis import get_redis
+            redis_client = get_redis()
+            embedding_client = None
+            try:
+                from openai import AsyncOpenAI
+                embedding_client = AsyncOpenAI()
+            except Exception:
+                pass
+            self._cache = ResultCache(
+                redis_client=redis_client,
+                embedding_client=embedding_client,
+            )
+        return self._cache
 
     async def execute_with_degradation(
+        self,
+        requirement: str,
+        language: str,
+        framework: str | None,
+        config: DebateConfig,
+        on_progress: callable = None,
+        api_key: str | None = None,
+    ) -> DebateResult:
+        # Check cache first
+        cache = self._get_cache()
+        cached = await cache.get_cached(requirement, language)
+        if cached:
+            logger.info("cache_hit requirement=%s", requirement[:60])
+            return cached
+
+        result = await self._run_with_degradation(
+            requirement, language, framework, config, on_progress, api_key
+        )
+
+        # Store result in cache
+        if result.code:
+            await cache.store(requirement, language, result)
+
+        return result
+
+    async def _run_with_degradation(
         self,
         requirement: str,
         language: str,

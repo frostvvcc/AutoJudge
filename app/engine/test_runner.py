@@ -207,35 +207,14 @@ class TestRunner:
                     returncode=1, stdout="", stderr="执行超时"
                 )
             except FileNotFoundError:
-                logger.warning(
-                    "docker_not_found: Docker not available, falling back to local execution"
+                logger.error(
+                    "docker_not_found: Docker is required for sandbox execution"
                 )
-                return await self._run_local(tmpdir, test_path, timeout)
-
-    async def _run_local(
-        self, tmpdir: str, test_path: str, timeout: int
-    ) -> _ExecResult:
-        """Fallback: run tests locally when Docker is not available."""
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                "python", "-m", "pytest", test_path,
-                "-v", "--tb=short",
-                cwd=tmpdir,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=timeout
-            )
-            return _ExecResult(
-                returncode=proc.returncode,
-                stdout=stdout.decode(),
-                stderr=stderr.decode(),
-            )
-        except Exception as e:
-            return _ExecResult(
-                returncode=1, stdout="", stderr=f"Local execution failed: {e}"
-            )
+                return _ExecResult(
+                    returncode=1,
+                    stdout="",
+                    stderr="Docker is not available. Code verification requires Docker for sandbox isolation.",
+                )
 
 
 @dataclass

@@ -39,12 +39,14 @@ ATTACKER_REGISTRY = {
 class DebateOrchestrator:
 
     def __init__(self, redis_client=None):
+        from app.db.redis import get_redis
+        resolved_redis = redis_client or get_redis()
         self.coder = CoderAgent()
         self.judge = JudgeAgent()
         self.consensus_detector = ConsensusDetector()
         self.test_runner = TestRunner()
         self.attack_kb = AttackKnowledgeBase()
-        self.user_prefs = UserPreferenceStore(redis_client)
+        self.user_prefs = UserPreferenceStore(resolved_redis)
         self.fix_patterns = FixPatternStore()
         self._live_extra_context: str | None = None
 

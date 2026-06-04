@@ -20,8 +20,10 @@ import uuid
 from typing import TypedDict, Annotated
 
 from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.mysql.aio import AIOMySQLSaver
 from langgraph.types import interrupt
+
+from app.config import settings
 
 
 def _merge_messages(left: list[dict], right: list[dict]) -> list[dict]:
@@ -329,7 +331,7 @@ async def judge_node(state: DebateState) -> dict:
 _compiled_graph = None
 
 
-def build_debate_graph():
+async def build_debate_graph():
     graph = StateGraph(DebateState)
 
     graph.add_node("coder", coder_node)
@@ -360,14 +362,19 @@ def build_debate_graph():
     )
     graph.add_edge("judge", END)
 
-    checkpointer = MemorySaver()
+    mysql_url = (
+        f"mysql+aiomysql://{settings.mysql_user}:{settings.mysql_password}"
+        f"@{settings.mysql_host}:{settings.mysql_port}/{settings.mysql_database}"
+    )
+    checkpointer = AIOMySQLSaver.from_conn_string(mysql_url)
+    await checkpointer.setup()
     return graph.compile(checkpointer=checkpointer)
 
 
-def get_debate_graph():
+async def get_debate_graph():
     global _compiled_graph
     if _compiled_graph is None:
-        _compiled_graph = build_debate_graph()
+        _compiled_graph = await build_debate_graph()
     return _compiled_graph
 
 
@@ -397,8 +404,9 @@ async def run_debate_with_graph(
         config.skip_cross_review = True
 
     # --- Memory retrieval ---
+    from app.db.redis import get_redis
     attack_kb = AttackKnowledgeBase()
-    user_prefs = UserPreferenceStore()
+    user_prefs = UserPreferenceStore(redis_client=get_redis())
     fix_patterns = FixPatternStore()
 
     experience_prompt = ""
@@ -455,7 +463,7 @@ async def run_debate_with_graph(
         initial_state["extra_context"] = "\n\n".join(context_parts)
 
     # --- Run the LangGraph graph ---
-    graph = get_debate_graph()
+    graph = await get_debate_graph()
     thread_id = str(uuid.uuid4())
     graph_config = {"configurable": {"thread_id": thread_id}}
 
