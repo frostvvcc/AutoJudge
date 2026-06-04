@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install ruff
+
+      - name: Lint
+        run: ruff check app/ tests/
+
+      - name: Type check
+        run: |
+          pip install pyright
+          pyright app/ --pythonversion 3.11 || true
+
+      - name: Unit tests
+        run: pytest tests/ -v --tb=short
+        env:
+          ANTHROPIC_API_KEY: "test-key"

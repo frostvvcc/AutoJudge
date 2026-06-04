@@ -1,0 +1,17 @@
+[project]
+name = "autojudge"
+version = "0.1.0"
+description = "多维对抗式代码进化引擎"
+requires-python = ">=3.11"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W"]
+ignore = ["E501"]

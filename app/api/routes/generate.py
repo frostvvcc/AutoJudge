@@ -1,0 +1,118 @@
+from __future__ import annotations
+
+import uuid
+import asyncio
+import logging
+
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi.responses import JSONResponse
+
+from app.api.models.request import GenerateRequest
+from app.api.models.response import DebateResult
+from app.engine.context import DebateConfig
+from app.engine.orchestrator import DebateOrchestrator
+
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/api/v1", tags=["generate"])
+
+
+@router.post("/generate", response_model=DebateResult)
+async def generate(request: GenerateRequest):
+    """Synchronous code generation with adversarial debate."""
+    config = DebateConfig(
+        max_rounds=request.config.max_rounds if request.config else 5,
+        attackers=(
+            request.config.attackers
+            if request.config
+            else ["security", "performance", "correctness"]
+        ),
+        model=(
+            request.config.model
+            if request.config
+            else "claude-sonnet-4-20250514"
+        ),
+        max_tokens=(
+            request.config.max_tokens if request.config else 100_000
+        ),
+    )
+
+    orchestrator = DebateOrchestrator()
+    result = await orchestrator.run(
+        requirement=request.task,
+        language=request.language,
+        framework=request.framework,
+        config=config,
+    )
+
+    return result
+
+
+@router.websocket("/ws/generate")
+async def websocket_generate(websocket: WebSocket):
+    """WebSocket endpoint for real-time debate streaming with user intervention."""
+    await websocket.accept()
+
+    try:
+        init_msg = await asyncio.wait_for(
+            websocket.receive_json(), timeout=10
+        )
+    except asyncio.TimeoutError:
+        await websocket.close(code=4000, reason="Authentication timeout")
+        return
+
+    task = init_msg.get("task", "")
+    language = init_msg.get("language", "python")
+    framework = init_msg.get("framework")
+
+    config_data = init_msg.get("config", {})
+    config = DebateConfig(
+        max_rounds=config_data.get("max_rounds", 5),
+        attackers=config_data.get(
+            "attackers", ["security", "performance", "correctness"]
+        ),
+        model=config_data.get("model", "claude-sonnet-4-20250514"),
+        max_tokens=config_data.get("max_tokens", 100_000),
+    )
+
+    orchestrator = DebateOrchestrator()
+
+    async def on_progress(event: dict):
+        try:
+            await websocket.send_json(event)
+        except Exception:
+            pass
+
+    try:
+        async with asyncio.timeout(300):
+            result = await orchestrator.run(
+                requirement=task,
+                language=language,
+                framework=framework,
+                config=config,
+                on_progress=on_progress,
+            )
+
+        await websocket.send_json({
+            "type": "result",
+            "data": result.model_dump(),
+        })
+
+    except asyncio.TimeoutError:
+        await websocket.send_json({
+            "type": "error", "message": "Session timeout (5 min)"
+        })
+    except WebSocketDisconnect:
+        logger.info("websocket_disconnected")
+    except Exception as e:
+        logger.error("websocket_error", error=str(e))
+        try:
+            await websocket.send_json({
+                "type": "error", "message": str(e)
+            })
+        except Exception:
+            pass
+    finally:
+        try:
+            await websocket.close()
+        except Exception:
+            pass

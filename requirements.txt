@@ -1,0 +1,37 @@
+# Core
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+pydantic-settings==2.7.1
+
+# LLM
+anthropic==0.43.0
+openai==1.59.0
+
+# LangGraph (Phase 2)
+langgraph==0.2.62
+langchain-core==0.3.29
+langsmith==0.2.10
+
+# Memory
+chromadb==0.5.23
+redis[hiredis]==5.2.1
+
+# MCP (Phase 3)
+mcp==1.2.0
+
+# Observability
+structlog==24.4.0
+prometheus-client==0.21.1
+
+# Testing
+pytest==8.3.4
+pytest-asyncio==0.25.0
+httpx==0.28.1
+
+# Static Analysis (Eval)
+bandit==1.8.3
+
+# Utilities
+python-dotenv==1.0.1
+tenacity==9.0.0

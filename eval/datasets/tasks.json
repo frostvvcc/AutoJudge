@@ -1,0 +1,123 @@
+[
+  {
+    "id": "func_001",
+    "task": "实现一个函数，接收用户列表，返回按注册时间排序的活跃用户",
+    "language": "python",
+    "difficulty": "easy",
+    "known_issues": [
+      {"category": "correctness", "description": "未处理空列表"},
+      {"category": "correctness", "description": "未处理 None 值"},
+      {"category": "performance", "description": "排序后再过滤，应该先过滤再排序"}
+    ]
+  },
+  {
+    "id": "func_002",
+    "task": "实现一个函数，接收两个有序数组，返回合并后的有序数组",
+    "language": "python",
+    "difficulty": "easy",
+    "known_issues": [
+      {"category": "correctness", "description": "未处理空数组"},
+      {"category": "correctness", "description": "未处理不同长度数组"},
+      {"category": "performance", "description": "使用 sort() 而非归并算法"}
+    ]
+  },
+  {
+    "id": "func_003",
+    "task": "实现一个 LRU Cache 类，支持 get 和 put 操作，容量有限时淘汰最久未使用的",
+    "language": "python",
+    "difficulty": "medium",
+    "known_issues": [
+      {"category": "correctness", "description": "容量为0时未处理"},
+      {"category": "correctness", "description": "并发访问时不安全"},
+      {"category": "performance", "description": "get/put 不是 O(1)"}
+    ]
+  },
+  {
+    "id": "api_001",
+    "task": "实现用户注册接口，邮箱唯一，密码哈希存储",
+    "language": "python",
+    "framework": "fastapi",
+    "difficulty": "medium",
+    "known_issues": [
+      {"category": "security", "description": "密码未做最小长度校验"},
+      {"category": "security", "description": "错误信息暴露邮箱是否已注册"},
+      {"category": "correctness", "description": "邮箱唯一性校验不是原子操作"},
+      {"category": "performance", "description": "email 字段无索引"}
+    ]
+  },
+  {
+    "id": "api_002",
+    "task": "实现用户登录接口，支持邮箱密码登录，返回 JWT token",
+    "language": "python",
+    "framework": "fastapi",
+    "difficulty": "medium",
+    "known_issues": [
+      {"category": "security", "description": "JWT secret 硬编码"},
+      {"category": "security", "description": "无登录失败次数限制"},
+      {"category": "security", "description": "错误信息区分了用户不存在和密码错误"},
+      {"category": "correctness", "description": "token 过期时间未设置或过长"}
+    ]
+  },
+  {
+    "id": "api_003",
+    "task": "实现文件上传接口，支持图片和 PDF，限制大小 10MB",
+    "language": "python",
+    "framework": "fastapi",
+    "difficulty": "medium",
+    "known_issues": [
+      {"category": "security", "description": "只检查文件扩展名，未检查文件内容（MIME type）"},
+      {"category": "security", "description": "文件名未做路径穿越防护"},
+      {"category": "correctness", "description": "大文件未做流式处理，内存可能溢出"},
+      {"category": "performance", "description": "同步写文件阻塞事件循环"}
+    ]
+  },
+  {
+    "id": "complex_001",
+    "task": "实现一个限流中间件，支持按 IP 和按用户两种模式，使用滑动窗口算法",
+    "language": "python",
+    "difficulty": "hard",
+    "known_issues": [
+      {"category": "correctness", "description": "窗口边界计算 off-by-one"},
+      {"category": "security", "description": "IP 可被 X-Forwarded-For 伪造"},
+      {"category": "performance", "description": "每次请求都遍历整个窗口"},
+      {"category": "correctness", "description": "多进程/多实例下计数不共享"}
+    ]
+  },
+  {
+    "id": "complex_002",
+    "task": "实现一个任务队列系统，支持优先级、延迟执行、失败重试（最多3次）",
+    "language": "python",
+    "difficulty": "hard",
+    "known_issues": [
+      {"category": "correctness", "description": "重试计数器在进程重启后丢失"},
+      {"category": "correctness", "description": "优先级反转：低优先级任务饥饿"},
+      {"category": "performance", "description": "轮询方式检查延迟任务，浪费 CPU"},
+      {"category": "security", "description": "任务序列化使用 pickle，存在 RCE 风险"}
+    ]
+  },
+  {
+    "id": "complex_003",
+    "task": "实现一个 WebSocket 聊天室，支持多房间、消息广播、用户上下线通知",
+    "language": "python",
+    "framework": "fastapi",
+    "difficulty": "hard",
+    "known_issues": [
+      {"category": "correctness", "description": "用户断开连接后未从房间列表移除"},
+      {"category": "security", "description": "消息内容未做 XSS 过滤"},
+      {"category": "performance", "description": "广播使用串行发送，慢客户端阻塞所有人"},
+      {"category": "correctness", "description": "多实例部署时消息不跨实例"}
+    ]
+  },
+  {
+    "id": "complex_004",
+    "task": "实现一个简单的分布式锁，基于 Redis，支持可重入和自动过期",
+    "language": "python",
+    "difficulty": "hard",
+    "known_issues": [
+      {"category": "correctness", "description": "非原子操作：先检查再设置"},
+      {"category": "correctness", "description": "锁过期后其他线程获取，原持有者释放了别人的锁"},
+      {"category": "security", "description": "锁的 value 可预测，可被其他客户端释放"},
+      {"category": "performance", "description": "忙等待获取锁，浪费 CPU"}
+    ]
+  }
+]
