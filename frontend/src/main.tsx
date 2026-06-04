@@ -3,11 +3,11 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { DebateProvider } from './contexts/DebateContext';
-import App from './App';
+import TaskCenter from './pages/TaskCenter';
+import WorkspacePage from './pages/WorkspacePage';
 import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import HistoryPage from './pages/HistoryPage';
-import HistoryDetailPage from './pages/HistoryDetailPage';
 import './styles/globals.css';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -72,7 +72,15 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               path="/"
               element={
                 <ProtectedRoute>
-                  <App />
+                  <TaskCenter />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/workspace/:sid"
+              element={
+                <ProtectedRoute>
+                  <WorkspacePage />
                 </ProtectedRoute>
               }
             />
@@ -84,13 +92,10 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
                 </ProtectedRoute>
               }
             />
+            {/* Redirect old history detail to workspace */}
             <Route
               path="/history/:sid"
-              element={
-                <ProtectedRoute>
-                  <HistoryDetailPage />
-                </ProtectedRoute>
-              }
+              element={<Navigate to="/workspace/:sid" replace />}
             />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

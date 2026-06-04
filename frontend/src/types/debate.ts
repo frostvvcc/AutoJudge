@@ -32,6 +32,24 @@ export interface DebateMetrics {
   cost_usd: number;
 }
 
+export interface UnresolvedIssue {
+  issue: string;
+  current_status: string;
+  impact: string;
+  suggestion: string;
+}
+
+export interface QualityReport {
+  star_rating: number;
+  star_comment: string;
+  resolved_issues: string[];
+  unresolved_issues: UnresolvedIssue[];
+  score_security: number;
+  score_performance: number;
+  score_correctness: number;
+  usage_advice: string;
+}
+
 export interface DebateResult {
   code: string;
   language: string;
@@ -45,6 +63,10 @@ export interface DebateResult {
   summary: DebateSummary;
   risk_assessment: RiskAssessment;
   metrics: DebateMetrics;
+  quality_report: QualityReport;
+  converged: boolean;
+  convergence_reason: string;
+  metadata?: Record<string, unknown>;
 }
 
 export interface WSEvent {
@@ -58,7 +80,22 @@ export interface WSEvent {
   message?: string;
   structured?: Record<string, unknown>;
   session_sid?: string;
+  phase?: string;
+  disputes_count?: number;
+  overall_verdict?: string;
+  summary?: string;
 }
+
+export type DebatePhase =
+  | 'idle'
+  | 'plan'
+  | 'coding'
+  | 'debate'
+  | 'arbitration'
+  | 'fixing'
+  | 'judging'
+  | 'done'
+  | 'error';
 
 export type DebateStatus = 'idle' | 'connecting' | 'running' | 'converged' | 'done' | 'error';
 
@@ -69,6 +106,7 @@ export const AGENT_COLORS: Record<string, string> = {
   correctness: 'border-green-500 bg-green-500/10',
   system: 'border-gray-500 bg-gray-500/10',
   judge: 'border-purple-500 bg-purple-500/10',
+  arbitrator: 'border-amber-500 bg-amber-500/10',
 };
 
 export const AGENT_LABELS: Record<string, string> = {
@@ -78,6 +116,7 @@ export const AGENT_LABELS: Record<string, string> = {
   correctness: 'Correctness',
   system: 'System',
   judge: 'Judge',
+  arbitrator: 'Arbitrator',
 };
 
 export const AGENT_DOTS: Record<string, string> = {
@@ -87,4 +126,39 @@ export const AGENT_DOTS: Record<string, string> = {
   correctness: 'bg-green-500',
   system: 'bg-gray-500',
   judge: 'bg-purple-500',
+  arbitrator: 'bg-amber-500',
 };
+
+export const LANGUAGE_GROUPS = [
+  {
+    group: '常用',
+    languages: [
+      { value: 'python', label: 'Python' },
+      { value: 'javascript', label: 'JavaScript' },
+      { value: 'typescript', label: 'TypeScript' },
+      { value: 'java', label: 'Java' },
+    ],
+  },
+  {
+    group: '系统级',
+    languages: [
+      { value: 'c', label: 'C' },
+      { value: 'cpp', label: 'C++' },
+      { value: 'csharp', label: 'C#' },
+      { value: 'rust', label: 'Rust' },
+      { value: 'go', label: 'Go' },
+    ],
+  },
+  {
+    group: '其他',
+    languages: [
+      { value: 'kotlin', label: 'Kotlin' },
+      { value: 'swift', label: 'Swift' },
+      { value: 'php', label: 'PHP' },
+      { value: 'ruby', label: 'Ruby' },
+      { value: 'scala', label: 'Scala' },
+      { value: 'shell', label: 'Shell/Bash' },
+      { value: 'sql', label: 'SQL' },
+    ],
+  },
+];

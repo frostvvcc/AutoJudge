@@ -86,6 +86,20 @@ export function DebateProvider({ children }: { children: ReactNode }) {
         setStatusText('完成');
         break;
 
+      case 'phase_change':
+        setStatusText(event.phase ? `进入${event.phase}阶段` : '');
+        break;
+
+      case 'plan_proposal':
+        setStatusText('方案设计中...');
+        break;
+
+      case 'arbitration_complete':
+        setStatusText(
+          `仲裁完成: ${event.overall_verdict ?? ''} (${event.disputes_count ?? 0}条争议)`,
+        );
+        break;
+
       case 'done':
         setStatus('done');
         break;
