@@ -157,6 +157,7 @@ export interface SessionDetail {
   summary_json: Record<string, unknown> | null;
   risk_json: Record<string, unknown> | null;
   metrics_json: Record<string, unknown> | null;
+  quality_report_json: Record<string, unknown> | null;
   total_rounds: number;
   total_tokens: number;
   total_latency_ms: number;

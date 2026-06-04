@@ -55,6 +55,7 @@ class SessionDetail(BaseModel):
     summary_json: dict | None
     risk_json: dict | None
     metrics_json: dict | None
+    quality_report_json: dict | None
     total_rounds: int
     total_tokens: int
     total_latency_ms: int
