@@ -18,6 +18,7 @@ interface DebateState {
   messages: DebateMessage[];
   currentRound: number;
   statusText: string;
+  currentPhase: string;
   result: DebateResult | null;
   error: string | null;
   submit: (task: string, language: string) => void;
@@ -40,6 +41,7 @@ export function DebateProvider({ children }: { children: ReactNode }) {
   const [messages, setMessages] = useState<DebateMessage[]>([]);
   const [currentRound, setCurrentRound] = useState(0);
   const [statusText, setStatusText] = useState('');
+  const [currentPhase, setCurrentPhase] = useState('idle');
   const [result, setResult] = useState<DebateResult | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -51,6 +53,7 @@ export function DebateProvider({ children }: { children: ReactNode }) {
 
       case 'round_start':
         setCurrentRound(event.round ?? 0);
+        setCurrentPhase('debate');
         setStatus('running');
         break;
 
@@ -82,19 +85,23 @@ export function DebateProvider({ children }: { children: ReactNode }) {
 
       case 'result':
         setResult(event.data ?? null);
+        setCurrentPhase('done');
         setStatus('done');
         setStatusText('完成');
         break;
 
       case 'phase_change':
+        setCurrentPhase(event.phase ?? 'idle');
         setStatusText(event.phase ? `进入${event.phase}阶段` : '');
         break;
 
       case 'plan_proposal':
-        setStatusText('方案设计中...');
+        setCurrentPhase('plan');
+        setStatusText('方案已生成，正在自动选择最佳方案...');
         break;
 
       case 'arbitration_complete':
+        setCurrentPhase('arbitration');
         setStatusText(
           `仲裁完成: ${event.overall_verdict ?? ''} (${event.disputes_count ?? 0}条争议)`,
         );
@@ -207,6 +214,7 @@ export function DebateProvider({ children }: { children: ReactNode }) {
     setMessages([]);
     setCurrentRound(0);
     setStatusText('');
+    setCurrentPhase('idle');
     setResult(null);
     setError(null);
   }, []);
@@ -218,6 +226,7 @@ export function DebateProvider({ children }: { children: ReactNode }) {
         messages,
         currentRound,
         statusText,
+        currentPhase,
         result,
         error,
         submit,

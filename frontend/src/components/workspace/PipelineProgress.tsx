@@ -23,7 +23,7 @@ function phaseIndex(phase: DebatePhase): number {
 }
 
 export default function PipelineProgress({ phase, currentRound, maxRounds: _maxRounds, statusText }: Props) {
-  const activeIdx = phaseIndex(phase);
+  const activeIdx = phase === 'idle' ? -1 : phaseIndex(phase);
 
   return (
     <div className="bg-gray-900 rounded-lg border border-gray-800 px-4 py-3">

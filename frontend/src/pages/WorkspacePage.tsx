@@ -27,7 +27,7 @@ export default function WorkspacePage() {
   const debate = useDebate();
   const navigate = useNavigate();
 
-  const phase = inferPhase(debate.status, debate.statusText);
+  const phase = (debate.currentPhase || inferPhase(debate.status, debate.statusText)) as DebatePhase;
 
   const activeAgents = useMemo(() => {
     const set = new Set<string>();
