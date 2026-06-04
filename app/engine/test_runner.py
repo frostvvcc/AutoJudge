@@ -208,8 +208,7 @@ class TestRunner:
                 )
             except FileNotFoundError:
                 logger.warning(
-                    "docker_not_found",
-                    msg="Docker not available, falling back to local execution",
+                    "docker_not_found: Docker not available, falling back to local execution"
                 )
                 return await self._run_local(tmpdir, test_path, timeout)
 

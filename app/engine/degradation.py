@@ -71,12 +71,12 @@ class DegradationManager:
                         config=config,
                         api_key=api_key,
                     ),
-                    timeout=120,
+                    timeout=300,
                 )
                 self.circuit_breaker.record_success()
                 return result
             except (asyncio.TimeoutError, Exception) as e:
-                logger.warning("l0_langgraph_failed error=%s", e)
+                logger.warning("l0_langgraph_failed error=%s", e, exc_info=True)
                 self.circuit_breaker.record_failure()
 
         # L1: Reduced attackers via orchestrator (lighter, no graph overhead)

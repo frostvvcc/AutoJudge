@@ -5,20 +5,20 @@ pydantic==2.10.4
 pydantic-settings==2.7.1
 
 # LLM
-anthropic==0.43.0
-openai==1.59.0
+anthropic>=0.43.0
+openai>=1.59.0
 
 # LangGraph (Phase 2)
-langgraph==0.2.62
-langchain-core==0.3.29
-langsmith==0.2.10
+langgraph>=0.2.62
+langchain-core>=0.3.29
+langsmith>=0.2.10
 
 # Memory
-chromadb==0.5.23
-redis[hiredis]==5.2.1
+chromadb>=0.5.23
+redis[hiredis]>=5.2.1
 
 # MCP (Phase 3)
-mcp==1.2.0
+mcp>=1.2.0
 
 # Observability
 structlog==24.4.0

@@ -97,7 +97,7 @@ class ResultCache:
 
             return None
         except Exception as e:
-            logger.warning("cache_get_failed", error=str(e))
+            logger.warning("%s: %s", "cache_get_failed", e)
             return None
 
     async def store(
@@ -135,7 +135,7 @@ class ResultCache:
             )
             await pipe.execute()
         except Exception as e:
-            logger.warning("cache_store_failed", error=str(e))
+            logger.warning("%s: %s", "cache_store_failed", e)
 
     async def _embed(self, text: str) -> list[float] | None:
         if self.embedding is None:
@@ -146,5 +146,5 @@ class ResultCache:
             )
             return response.data[0].embedding
         except Exception as e:
-            logger.warning("embedding_failed", error=str(e))
+            logger.warning("%s: %s", "embedding_failed", e)
             return None

@@ -16,7 +16,6 @@ export default function RoundTimeline({
       {rounds.map((round, idx) => {
         const isCompleted = round < currentRound;
         const isCurrent = round === currentRound;
-        const isFuture = round > currentRound;
         const isLast = idx === rounds.length - 1;
 
         return (

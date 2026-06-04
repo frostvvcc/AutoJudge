@@ -69,7 +69,7 @@ except ImportError:
     PROMETHEUS_AVAILABLE = False
 
 
-logger = structlog.get_logger()
+logger = logging.getLogger(__name__)
 
 
 def record_debate_complete(
@@ -92,13 +92,8 @@ def record_debate_complete(
         debate_convergence_rate.labels(outcome=outcome).inc()
 
     logger.info(
-        "debate_complete",
-        language=language,
-        complexity=complexity,
-        rounds=rounds,
-        converged=converged,
-        duration_s=round(duration_s, 2),
-        degradation_level=degradation_level,
+        "debate_complete language=%s complexity=%s rounds=%d converged=%s duration_s=%.2f degradation=%s",
+        language, complexity, rounds, converged, duration_s, degradation_level,
     )
 
 
@@ -110,10 +105,8 @@ def record_agent_call(
         agent_tokens_used.labels(agent=agent).observe(tokens)
 
     logger.info(
-        "agent_call_complete",
-        agent=agent,
-        tokens=tokens,
-        duration_s=round(duration_s, 2),
+        "agent_call_complete agent=%s tokens=%d duration_s=%.2f",
+        agent, tokens, duration_s,
     )
 
 
@@ -124,5 +117,5 @@ def record_agent_error(agent: str, error_type: str):
         ).inc()
 
     logger.warning(
-        "agent_error", agent=agent, error_type=error_type
+        "agent_error agent=%s error_type=%s", agent, error_type
     )

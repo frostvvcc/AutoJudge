@@ -319,7 +319,7 @@ async def _call_claude_cli(
             content = structured["test_code"]
     else:
         content = raw_output
-        logger.warning("json_parse_failed", agent=agent, raw_length=len(raw_output))
+        logger.warning("json_parse_failed agent=%s raw_length=%d", agent, len(raw_output))
 
     # Estimate token count from character length (~1.5 chars/token for mixed CJK+English)
     estimated_tokens = len(prompt + raw_output) // 2

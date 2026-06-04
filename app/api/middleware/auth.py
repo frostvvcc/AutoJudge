@@ -75,4 +75,4 @@ class AuthMiddleware:
             except HTTPException:
                 raise
             except Exception as e:
-                logger.warning("rate_limit_check_failed", error=str(e))
+                logger.warning("%s: %s", "rate_limit_check_failed", e)

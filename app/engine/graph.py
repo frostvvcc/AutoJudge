@@ -14,13 +14,24 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import operator
 import time
 import uuid
-from typing import TypedDict
+from typing import TypedDict, Annotated
 
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.types import interrupt
+
+
+def _merge_messages(left: list[dict], right: list[dict]) -> list[dict]:
+    """Reducer: append new messages to existing list (handles parallel fan-in)."""
+    return left + right
+
+
+def _max_int(left: int, right: int) -> int:
+    """Reducer: take the higher budget_spent value from parallel nodes."""
+    return max(left, right)
 
 from app.agents.coder import CoderAgent
 from app.agents.security_attacker import SecurityAttacker
@@ -56,12 +67,12 @@ class DebateState(TypedDict):
     current_code: str
     round: int
     max_rounds: int
-    messages: list[dict]
+    messages: Annotated[list[dict], _merge_messages]
     consensus: dict
     skip_list: list[str]
     extra_context: str
     converged: bool
-    budget_spent: int
+    budget_spent: Annotated[int, _max_int]
     budget_total: int
     judge_report: dict
     config: dict
@@ -137,7 +148,7 @@ async def coder_node(state: DebateState) -> dict:
     return {
         "round": ctx.round,
         "current_code": response.code or state.get("current_code", ""),
-        "messages": state.get("messages", []) + [new_msg],
+        "messages": [new_msg],
         "budget_spent": budget.spent,
     }
 
@@ -169,7 +180,7 @@ async def _attacker_node(
             "structured": response.structured,
         }
         return {
-            "messages": state.get("messages", []) + [new_msg],
+            "messages": [new_msg],
             "budget_spent": budget.spent,
         }
     except Exception as e:
@@ -219,7 +230,7 @@ async def cross_review_node(state: DebateState) -> dict:
         "correctness": correctness_agent,
     }
 
-    new_messages = list(state.get("messages", []))
+    new_cross_msgs = []
 
     active = [
         (name, agent) for name, agent in agents.items()
@@ -239,14 +250,14 @@ async def cross_review_node(state: DebateState) -> dict:
 
     for name, response in cross_results:
         if response and response.content.strip():
-            new_messages.append({
+            new_cross_msgs.append({
                 "agent": name,
                 "content": f"[交叉审阅] {response.content}",
                 "round": current_round,
                 "structured": response.structured,
             })
 
-    updated_state = {**state, "messages": new_messages}
+    updated_state = {**state, "messages": new_cross_msgs}
 
     # Interrupt: only pause if enable_interrupt is set (WebSocket mode)
     if state.get("enable_interrupt"):
@@ -282,7 +293,6 @@ def _check_and_return_consensus(
     result = consensus_detector.check_consensus(debate_msgs)
 
     return {
-        "messages": state.get("messages", []),
         "consensus": result,
         "converged": result.get("converged", False),
         "budget_spent": state.get("budget_spent", 0),
@@ -403,6 +413,10 @@ async def run_debate_with_graph(
             preference_prompt = user_prefs.build_preference_prompt(prefs)
 
     # --- Build initial graph state ---
+    # Attackers not in config.attackers get skip-listed so graph nodes skip them
+    all_attackers = {"security", "performance", "correctness"}
+    skip_list = sorted(all_attackers - set(config.attackers))
+
     initial_state: DebateState = {
         "requirement": requirement,
         "language": language,
@@ -412,7 +426,7 @@ async def run_debate_with_graph(
         "max_rounds": config.max_rounds,
         "messages": [],
         "consensus": {},
-        "skip_list": [],
+        "skip_list": skip_list,
         "extra_context": "",
         "converged": False,
         "budget_spent": 0,

@@ -17,22 +17,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# --- MCP Server wrapper (when run as standalone process) ---
-try:
-    from mcp.server import Server
-
-    server = Server("code-analysis")
-
-    @server.tool("bandit_scan")
-    async def _mcp_bandit_scan(code: str, language: str = "python") -> dict:
-        return await bandit_scan(code, language)
-
-    @server.tool("semgrep_scan")
-    async def _mcp_semgrep_scan(code: str, language: str = "python") -> dict:
-        return await semgrep_scan(code, language)
-
-except ImportError:
-    server = None
+server = None
 
 
 async def bandit_scan(code: str, language: str = "python") -> dict:
@@ -118,14 +103,67 @@ async def semgrep_scan(code: str, language: str = "python") -> dict:
             }
 
 
+def _build_mcp_server():
+    """Build MCP Server with tool registrations (called at module load or __main__)."""
+    try:
+        from mcp.server import Server
+        from mcp.types import Tool, TextContent
+
+        srv = Server("code-analysis")
+
+        @srv.list_tools()
+        async def list_tools():
+            return [
+                Tool(
+                    name="bandit_scan",
+                    description="Run bandit security scan on Python code",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "code": {"type": "string"},
+                            "language": {"type": "string", "default": "python"},
+                        },
+                        "required": ["code"],
+                    },
+                ),
+                Tool(
+                    name="semgrep_scan",
+                    description="Run semgrep scan on code",
+                    inputSchema={
+                        "type": "object",
+                        "properties": {
+                            "code": {"type": "string"},
+                            "language": {"type": "string", "default": "python"},
+                        },
+                        "required": ["code"],
+                    },
+                ),
+            ]
+
+        @srv.call_tool()
+        async def call_tool(name: str, arguments: dict):
+            if name == "bandit_scan":
+                result = await bandit_scan(arguments["code"], arguments.get("language", "python"))
+            elif name == "semgrep_scan":
+                result = await semgrep_scan(arguments["code"], arguments.get("language", "python"))
+            else:
+                result = {"error": f"Unknown tool: {name}"}
+            return [TextContent(type="text", text=json.dumps(result))]
+
+        return srv
+    except ImportError:
+        return None
+
+
 if __name__ == "__main__":
-    if server is not None:
+    srv = _build_mcp_server()
+    if srv is not None:
         import asyncio
         from mcp.server.stdio import stdio_server
 
         async def main():
             async with stdio_server() as (read, write):
-                await server.run(read, write)
+                await srv.run(read, write)
 
         asyncio.run(main())
     else:
