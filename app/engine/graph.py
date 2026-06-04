@@ -61,15 +61,20 @@ from app.api.models.response import (
 
 logger = logging.getLogger(__name__)
 
-# ─── Progress callback registry (set per-invocation by run_debate_with_graph) ─
+# ─── Progress callback registry (concurrent-safe via contextvars) ─
 
-_progress_callback: callable | None = None
+import contextvars
+
+_progress_callback: contextvars.ContextVar[callable | None] = contextvars.ContextVar(
+    '_progress_callback', default=None
+)
 
 
 async def _notify(event: dict):
-    if _progress_callback:
+    cb = _progress_callback.get(None)
+    if cb:
         try:
-            await _progress_callback(event)
+            await cb(event)
         except Exception:
             pass
 
@@ -165,8 +170,10 @@ async def plan_node(state: DebateState) -> dict:
         extra_context=f"补充信息：{extra}" if extra else "",
     )
 
+    from app.llm.model_router import get_model_for_agent
+
     start = time.monotonic()
-    response = await coder_agent.speak(ctx, prompt, budget)
+    response = await coder_agent.speak(ctx, prompt, budget, model=get_model_for_agent("planner"))
     record_agent_call("coder", response.tokens_used, time.monotonic() - start)
 
     plans_content = response.content
@@ -478,6 +485,8 @@ def _extract_unresolved_disputes(state: DebateState) -> list[dict]:
     last_round = state.get("round", 0)
 
     for msg in state.get("messages", []):
+        if msg.get("round", 0) < last_round:
+            continue
         if msg["agent"] in ("security", "performance", "correctness"):
             structured = msg.get("structured")
             if not structured or not isinstance(structured, dict):
@@ -523,6 +532,7 @@ async def arbitration_node(state: DebateState) -> dict:
             "must_fix_items": [],
         }
 
+    await _notify({"type": "phase_change", "phase": "arbitration"})
     await _notify({
         "type": "status",
         "content": f"辩论未收敛，Arbitrator 正在仲裁 {len(disputes)} 条争议...",
@@ -758,8 +768,7 @@ async def run_debate_with_graph(
     on_progress: callable = None,
 ) -> DebateResult:
     """Run a full debate through LangGraph with Memory/TestRunner/ComplexityRouter."""
-    global _progress_callback
-    _progress_callback = on_progress
+    _progress_callback.set(on_progress)
 
     config = config or DebateConfig()
     start_time = time.monotonic()
@@ -952,8 +961,9 @@ async def run_debate_with_graph(
         debate={
             "total_rounds": final_round,
             "converged": is_converged,
-            "consensus_reason": (
-                "各方达成共识" if is_converged else "达到最大轮次或预算上限"
+            "consensus_reason": final_state.get(
+                "convergence_reason",
+                "各方达成共识" if is_converged else "达到最大轮次或预算上限",
             ),
             "transcript": transcript,
         },
@@ -998,5 +1008,5 @@ async def run_debate_with_graph(
     )
 
     await _notify({"type": "done"})
-    _progress_callback = None
+    _progress_callback.set(None)
     return result

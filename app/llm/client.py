@@ -49,14 +49,22 @@ CODER_JSON_SCHEMA = {
 
 JUDGE_JSON_SCHEMA = {
     "summary": "(string) 辩论过程综合总结",
+    "star_rating": "(integer 1-5) 星级评级",
+    "star_comment": "(string) 一句话评语",
+    "resolved_issues": ["(string) 已解决的问题"],
+    "unresolved_issues": [{"issue": "(string)", "current_status": "(string)", "impact": "(string)", "suggestion": "(string)"}],
     "total_issues_raised": "(integer)",
     "accepted_and_fixed": "(integer)",
     "rejected_by_coder": "(integer)",
     "suggestions_noted": "(integer)",
     "key_improvements": ["(string)"],
+    "score_security": "(integer 0-100) 安全性评分",
+    "score_performance": "(integer 0-100) 性能评分",
+    "score_correctness": "(integer 0-100) 正确性评分",
     "risk_security": "(string: critical | high | medium | low | none)",
     "risk_performance": "(string: critical | high | medium | low | none)",
     "risk_correctness": "(string: critical | high | medium | low | none)",
+    "usage_advice": "(string) 使用建议",
     "confidence": "(number 0-1)",
 }
 
@@ -494,9 +502,7 @@ async def _call_anthropic_api(
             system=system_blocks,
             messages=conv_messages,
             tools=cached_tools,
-            tool_choice=tool_choice if turn == 0 and agent != "coder" else (
-                {"type": "any"} if agent == "coder" else tool_choice
-            ),
+            tool_choice={"type": "any"} if agent == "coder" else tool_choice,
             max_tokens=max_tokens,
         )
 

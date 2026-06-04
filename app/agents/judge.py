@@ -120,6 +120,7 @@ JUDGE_SUBMIT_TOOL = {
             "total_issues_raised",
             "accepted_and_fixed",
             "rejected_by_coder",
+            "suggestions_noted",
             "key_improvements",
             "score_security",
             "score_performance",

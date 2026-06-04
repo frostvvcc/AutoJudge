@@ -13,6 +13,7 @@ MODEL_ROUTING = {
     "judge": settings.default_model,
     "test_generator": settings.haiku_model,
     "arbitrator": settings.default_model,
+    "planner": settings.haiku_model,
 }
 
 

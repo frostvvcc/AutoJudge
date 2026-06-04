@@ -24,6 +24,7 @@ from app.api.models.response import (
     DebateSummary,
     RiskAssessment,
     DebateMetrics,
+    QualityReport,
 )
 
 logger = logging.getLogger(__name__)
@@ -194,6 +195,16 @@ class DebateOrchestrator:
             code=context.current_code,
             language=language,
             confidence=judge_report.get("confidence", 0.0),
+            quality_report=QualityReport(
+                star_rating=judge_report.get("star_rating", 0),
+                star_comment=judge_report.get("star_comment", ""),
+                resolved_issues=judge_report.get("resolved_issues", []),
+                unresolved_issues=judge_report.get("unresolved_issues", []),
+                score_security=judge_report.get("score_security", 0),
+                score_performance=judge_report.get("score_performance", 0),
+                score_correctness=judge_report.get("score_correctness", 0),
+                usage_advice=judge_report.get("usage_advice", ""),
+            ),
             debate={
                 "total_rounds": context.round,
                 "converged": convergence_result.get("converged", False),
