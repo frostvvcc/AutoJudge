@@ -2,9 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Request, WebSocket, WebSocketDisconnect
 
 from app.api.models.request import GenerateRequest
 from app.api.models.response import DebateResult
@@ -20,8 +19,7 @@ resource_mgr = ResourceManager()
 
 
 @router.post("/generate", response_model=DebateResult)
-async def generate(request: GenerateRequest):
-    """Synchronous code generation with adversarial debate."""
+async def generate(request: GenerateRequest, raw_request: Request):
     config = DebateConfig(
         max_rounds=request.config.max_rounds if request.config else 5,
         attackers=(
@@ -39,12 +37,15 @@ async def generate(request: GenerateRequest):
         ),
     )
 
+    api_key = getattr(raw_request.state, "api_key", None)
+
     async with resource_mgr.acquire_debate_slot():
         result = await degradation_mgr.execute_with_degradation(
             requirement=request.task,
             language=request.language,
             framework=request.framework,
             config=config,
+            api_key=api_key,
         )
 
     return result
@@ -52,7 +53,6 @@ async def generate(request: GenerateRequest):
 
 @router.websocket("/ws/generate")
 async def websocket_generate(websocket: WebSocket):
-    """WebSocket endpoint for real-time debate streaming with user intervention."""
     await websocket.accept()
 
     try:
@@ -66,6 +66,7 @@ async def websocket_generate(websocket: WebSocket):
     task = init_msg.get("task", "")
     language = init_msg.get("language", "python")
     framework = init_msg.get("framework")
+    api_key = init_msg.get("api_key")
 
     config_data = init_msg.get("config", {})
     config = DebateConfig(
@@ -80,10 +81,11 @@ async def websocket_generate(websocket: WebSocket):
     from app.engine.orchestrator import DebateOrchestrator
     orchestrator = DebateOrchestrator()
 
-    # User intervention: listen for skip/add_context/force_stop in background
     stop_event = asyncio.Event()
+    debate_task: asyncio.Task | None = None
 
     async def listen_for_intervention():
+        nonlocal debate_task
         while not stop_event.is_set():
             try:
                 msg = await asyncio.wait_for(
@@ -92,7 +94,7 @@ async def websocket_generate(websocket: WebSocket):
                 msg_type = msg.get("type")
                 if msg_type == "skip_attacker":
                     attacker = msg.get("attacker", "")
-                    if attacker not in orchestrator.coder.name:
+                    if attacker in ("security", "performance", "correctness"):
                         config.attackers = [
                             a for a in config.attackers if a != attacker
                         ]
@@ -100,10 +102,14 @@ async def websocket_generate(websocket: WebSocket):
                 elif msg_type == "add_context":
                     extra = msg.get("content", "")
                     if extra:
-                        orchestrator._extra_user_context = extra
+                        # Write to the DebateContext that orchestrator
+                        # actually reads during Coder prompt construction
+                        orchestrator._live_extra_context = extra
                         logger.info("user_added_context")
                 elif msg_type == "force_stop":
                     stop_event.set()
+                    if debate_task and not debate_task.done():
+                        debate_task.cancel()
                     logger.info("user_forced_stop")
             except asyncio.TimeoutError:
                 continue
@@ -119,13 +125,25 @@ async def websocket_generate(websocket: WebSocket):
     try:
         async with asyncio.timeout(300):
             listener_task = asyncio.create_task(listen_for_intervention())
-            try:
-                result = await orchestrator.run(
+
+            async def run_debate():
+                return await orchestrator.run(
                     requirement=task,
                     language=language,
                     framework=framework,
                     config=config,
                     on_progress=on_progress,
+                    api_key=api_key,
+                )
+
+            debate_task = asyncio.create_task(run_debate())
+            try:
+                result = await debate_task
+            except asyncio.CancelledError:
+                result = DebateResult(
+                    code="",
+                    language=language,
+                    convergence_reason="用户手动终止",
                 )
             finally:
                 stop_event.set()

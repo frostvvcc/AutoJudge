@@ -46,6 +46,7 @@ class DebateOrchestrator:
         self.attack_kb = AttackKnowledgeBase()
         self.user_prefs = UserPreferenceStore(redis_client)
         self.fix_patterns = FixPatternStore()
+        self._live_extra_context: str | None = None
 
     async def run(
         self,
@@ -274,6 +275,11 @@ class DebateOrchestrator:
     ) -> list:
         round_messages = []
 
+        # Pick up live extra context from WebSocket user intervention
+        if self._live_extra_context:
+            context.extra_context = self._live_extra_context
+            self._live_extra_context = None
+
         # Stage 1: Coder speaks
         if context.round == 1:
             coder_prompt = (
@@ -287,6 +293,18 @@ class DebateOrchestrator:
                 "对每个攻击：如果合理，承认并修复；如果不合理，调用工具验证后给出反驳证据。"
                 "如果有修复，贴出完整的新版代码。"
             )
+            # Memory Layer 3: retrieve historical fix patterns for current issues
+            last_findings = self._get_latest_findings(context)
+            if last_findings:
+                fix_hints = []
+                for desc in last_findings[:3]:
+                    fixes = await self.fix_patterns.retrieve_fixes(desc, top_k=2)
+                    fix_hints.extend(fixes)
+                if fix_hints:
+                    coder_prompt += (
+                        "\n\n以下是历史上类似问题的修复方案供参考：\n"
+                        + "\n".join(f"  - {h}" for h in fix_hints[:5])
+                    )
 
         await self._notify(on_progress, {
             "type": "agent_start", "agent": "coder"
@@ -414,6 +432,19 @@ class DebateOrchestrator:
                     round_messages.append(context.messages[-1])
 
         return round_messages
+
+    def _get_latest_findings(self, context: DebateContext) -> list[str]:
+        """Extract finding descriptions from the most recent attacker messages."""
+        descriptions = []
+        for msg in reversed(context.messages):
+            if msg.agent in ("security", "performance", "correctness"):
+                if msg.structured and isinstance(msg.structured, dict):
+                    for f in msg.structured.get("findings", []):
+                        if f.get("description"):
+                            descriptions.append(f["description"])
+            if len(descriptions) >= 5:
+                break
+        return descriptions
 
     def _format_findings(self, responses) -> str:
         parts = []
