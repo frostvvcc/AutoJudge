@@ -383,6 +383,9 @@ def _get_tools_for_agent(agent: str) -> tuple[list[dict], dict]:
     elif agent == "judge":
         from app.agents.judge import JUDGE_SUBMIT_TOOL
         return [JUDGE_SUBMIT_TOOL], {"type": "tool", "name": "submit_judgment"}
+    elif agent == "arbitrator":
+        from app.agents.arbitrator import ARBITRATOR_SUBMIT_TOOL
+        return [ARBITRATOR_SUBMIT_TOOL], {"type": "tool", "name": "submit_arbitration"}
     elif agent == "requirement_parser":
         from app.engine.requirement_parser import PARSER_TOOL
         return [PARSER_TOOL], {"type": "tool", "name": "submit_analysis"}
@@ -483,7 +486,7 @@ async def _call_anthropic_api(
     total_cache_creation = 0
 
     start = time.monotonic()
-    max_tool_turns = 3
+    max_tool_turns = 5
 
     for turn in range(max_tool_turns + 1):
         response = await client.messages.create(

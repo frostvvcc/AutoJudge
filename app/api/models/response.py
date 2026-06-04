@@ -46,6 +46,17 @@ class DebateMetrics(BaseModel):
     tokens_by_agent: dict[str, int] = Field(default_factory=dict)
 
 
+class QualityReport(BaseModel):
+    star_rating: int = 0
+    star_comment: str = ""
+    resolved_issues: list[str] = Field(default_factory=list)
+    unresolved_issues: list[dict] = Field(default_factory=list)
+    score_security: int = 0
+    score_performance: int = 0
+    score_correctness: int = 0
+    usage_advice: str = ""
+
+
 class DebateResult(BaseModel):
     code: str = ""
     language: str = "python"
@@ -55,6 +66,7 @@ class DebateResult(BaseModel):
     summary: DebateSummary = Field(default_factory=DebateSummary)
     risk_assessment: RiskAssessment = Field(default_factory=RiskAssessment)
     metrics: DebateMetrics = Field(default_factory=DebateMetrics)
+    quality_report: QualityReport = Field(default_factory=QualityReport)
 
     converged: bool = False
     convergence_reason: str = ""

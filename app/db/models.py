@@ -77,6 +77,7 @@ class DebateSession(Base):
     summary_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     risk_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     metrics_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    quality_report_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)

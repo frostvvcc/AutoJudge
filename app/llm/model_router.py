@@ -12,6 +12,7 @@ MODEL_ROUTING = {
     "compressor": settings.haiku_model,
     "judge": settings.default_model,
     "test_generator": settings.haiku_model,
+    "arbitrator": settings.default_model,
 }
 
 

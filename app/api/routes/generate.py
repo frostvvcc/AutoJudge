@@ -110,6 +110,7 @@ async def _save_session(
             convergence_reason=result.convergence_reason or None,
             summary_json=result.summary.model_dump() if result.summary else None,
             risk_json=result.risk_assessment.model_dump() if result.risk_assessment else None,
+            quality_report_json=result.quality_report.model_dump() if result.quality_report else None,
             metrics_json=result.metrics.model_dump() if result.metrics else None,
             total_rounds=result.metrics.total_rounds if result.metrics else 0,
             total_tokens=result.metrics.total_tokens if result.metrics else 0,

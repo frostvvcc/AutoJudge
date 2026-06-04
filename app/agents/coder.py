@@ -17,6 +17,13 @@ class CoderAgent(BaseAgent):
 4. 你可以反驳任何 Attacker 的观点，但必须给出具体理由
 5. 使用 submit_response 工具提交你的回应，updated_code 字段必须包含完整可运行的代码
 
+自测要求（提交前必须执行）：
+1. 用 run_code_snippet 工具执行你的代码，确认能正常运行
+2. 构造 2-3 个关键测试用例（正常路径 + 边界情况），验证核心功能
+3. 如果 Attacker 给了 test_input，必须用这些输入测试你的代码
+4. 如果执行失败，自行修复后再次测试，直到通过
+5. 只有自测通过的代码，才通过 submit_response 提交
+
 重要：你不是被动的修理工。如果你认为某个攻击不合理，大胆反驳，并说明理由。"""
 
         parts = [base]

@@ -40,6 +40,7 @@ from app.agents.security_attacker import SecurityAttacker
 from app.agents.performance_attacker import PerformanceAttacker
 from app.agents.correctness_attacker import CorrectnessAttacker
 from app.agents.judge import JudgeAgent
+from app.agents.arbitrator import ArbitratorAgent
 from app.engine.context import DebateContext, DebateConfig, DebateMessage
 from app.engine.budget import BudgetManager
 from app.engine.consensus import ConsensusDetector
@@ -55,6 +56,7 @@ from app.api.models.response import (
     DebateSummary,
     RiskAssessment,
     DebateMetrics,
+    QualityReport,
 )
 
 logger = logging.getLogger(__name__)
@@ -89,6 +91,10 @@ class DebateState(TypedDict):
     budget_spent: Annotated[int, _max_int]
     budget_total: int
     judge_report: dict
+    arbitration_result: dict
+    must_fix_items: list[dict]
+    convergence_reason: str
+    selected_plan: str
     config: dict
     enable_interrupt: bool
 
@@ -100,6 +106,7 @@ security_agent = SecurityAttacker()
 performance_agent = PerformanceAttacker()
 correctness_agent = CorrectnessAttacker()
 judge_agent = JudgeAgent()
+arbitrator_agent = ArbitratorAgent()
 consensus_detector = ConsensusDetector()
 
 
@@ -132,6 +139,116 @@ def _build_context(state: DebateState) -> tuple[DebateContext, BudgetManager]:
 
 # ─── Graph nodes ────────────────────────────────────────────────────────────
 
+PLAN_PHASE_PROMPT = """根据以下需求，设计 2 个不同方向的实现方案。
+
+要求：
+1. 两个方案必须有明确的差异（不是微调，是不同的技术路线）
+2. 每个方案说明：技术选型、核心流程、安全考虑、不包含什么
+3. 给每个方案一个简短标签（如"轻量级""生产级""安全优先"）
+4. 不写代码，只说方案
+
+需求：{requirement}
+{extra_context}"""
+
+
+async def plan_node(state: DebateState) -> dict:
+    """Plan Phase: Coder outputs 2 solution proposals for user to choose."""
+    ctx, budget = _build_context(state)
+
+    await _notify({"type": "phase_change", "phase": "plan"})
+    await _notify({"type": "status", "content": "Coder 正在设计方案..."})
+    await _notify({"type": "agent_start", "agent": "coder"})
+
+    extra = state.get("extra_context", "")
+    prompt = PLAN_PHASE_PROMPT.format(
+        requirement=state["requirement"],
+        extra_context=f"补充信息：{extra}" if extra else "",
+    )
+
+    start = time.monotonic()
+    response = await coder_agent.speak(ctx, prompt, budget)
+    record_agent_call("coder", response.tokens_used, time.monotonic() - start)
+
+    plans_content = response.content
+
+    await _notify({
+        "type": "plan_proposal",
+        "content": plans_content,
+    })
+
+    selected_plan = plans_content
+
+    # HITL: pause for user to select/adjust plan (WebSocket mode only)
+    if state.get("enable_interrupt"):
+        conversation_round = 0
+        max_plan_rounds = 7
+
+        while conversation_round < max_plan_rounds:
+            hint = ""
+            if conversation_round == 3:
+                hint = "\n\n💡 已调整 3 轮方案。建议先选一个开始——后续辩论阶段还可以继续优化。"
+            elif conversation_round == 5:
+                hint = "\n\n⚠️ 方案讨论已进行 5 轮。建议尽快选择一个方案开始。"
+
+            user_input = interrupt({
+                "type": "plan_review",
+                "content": plans_content + hint,
+                "round": conversation_round,
+                "max_rounds": max_plan_rounds,
+            })
+
+            if not user_input or not isinstance(user_input, dict):
+                break
+
+            action = user_input.get("action", "")
+
+            if action == "select":
+                selected_plan = user_input.get("plan_content", plans_content)
+                break
+
+            elif action == "auto_select":
+                break
+
+            elif action == "chat":
+                user_message = user_input.get("message", "")
+                conversation_round += 1
+
+                adjust_prompt = (
+                    f"用户对方案有调整意见：\n{user_message}\n\n"
+                    f"请根据用户的反馈重新设计 2 个方案。"
+                    f"之前的方案：\n{plans_content}"
+                )
+
+                await _notify({"type": "agent_start", "agent": "coder"})
+                start = time.monotonic()
+                response = await coder_agent.speak(ctx, adjust_prompt, budget)
+                record_agent_call("coder", response.tokens_used, time.monotonic() - start)
+
+                plans_content = response.content
+                selected_plan = plans_content
+
+                await _notify({
+                    "type": "plan_proposal",
+                    "content": plans_content,
+                })
+            else:
+                break
+
+    plan_msg = {
+        "agent": "coder",
+        "content": f"[方案设计] {plans_content}",
+        "round": 0,
+    }
+    await _notify({"type": "message", **plan_msg})
+
+    return {
+        "selected_plan": selected_plan,
+        "messages": [plan_msg],
+        "budget_spent": budget.spent,
+    }
+
+
+
 async def coder_node(state: DebateState) -> dict:
     ctx, budget = _build_context(state)
     ctx.round = state["round"] + 1
@@ -140,7 +257,18 @@ async def coder_node(state: DebateState) -> dict:
     await _notify({"type": "agent_start", "agent": "coder"})
 
     if ctx.round == 1:
-        prompt = f"根据以下需求生成代码，并简要说明你的设计思路：\n{ctx.requirement}"
+        selected_plan = state.get("selected_plan", "")
+        if selected_plan:
+            prompt = (
+                f"根据以下需求和确认的方案生成代码：\n{ctx.requirement}\n\n"
+                f"确认的方案：\n{selected_plan}\n\n"
+                "请严格按照方案实现。提交前用 run_code_snippet 自测。"
+            )
+        else:
+            prompt = (
+                f"根据以下需求生成代码，并简要说明你的设计思路：\n{ctx.requirement}\n\n"
+                "提交前请用 run_code_snippet 自测代码能否正常运行。"
+            )
         if ctx.extra_context:
             prompt += f"\n\n补充需求：{ctx.extra_context}"
     else:
@@ -148,6 +276,7 @@ async def coder_node(state: DebateState) -> dict:
             "请回应上一轮各 Attacker 的意见。"
             "对每个攻击：如果合理，承认并修复；如果不合理，调用工具验证后给出反驳证据。"
             "如果有修复，贴出完整的新版代码。"
+            "提交前请用 run_code_snippet 自测修复后的代码。"
         )
 
     start = time.monotonic()
@@ -342,6 +471,208 @@ def check_consensus_edge(state: DebateState) -> str:
     return "continue"
 
 
+
+def _extract_unresolved_disputes(state: DebateState) -> list[dict]:
+    """Extract unresolved disputes from debate messages."""
+    disputes = []
+    last_round = state.get("round", 0)
+
+    for msg in state.get("messages", []):
+        if msg["agent"] in ("security", "performance", "correctness"):
+            structured = msg.get("structured")
+            if not structured or not isinstance(structured, dict):
+                continue
+            if structured.get("stance") != "attacking":
+                continue
+            for finding in structured.get("findings", []):
+                disputes.append({
+                    "attacker": msg["agent"],
+                    "finding": finding.get("description", ""),
+                    "severity": finding.get("severity", "unknown"),
+                    "test_input": finding.get("test_input"),
+                    "coder_response": _find_coder_response(state, finding),
+                })
+    return disputes
+
+
+def _find_coder_response(state: DebateState, finding: dict) -> str:
+    """Find Coder's response to a specific finding."""
+    for msg in reversed(state.get("messages", [])):
+        if msg["agent"] == "coder" and msg.get("structured"):
+            structured = msg["structured"]
+            if isinstance(structured, dict):
+                for resp in structured.get("responses", []):
+                    if finding.get("description", "") in resp.get("explanation", ""):
+                        action = resp.get("action", "?")
+                        explanation = resp.get("explanation", "")
+                        return f"[{action}] {explanation}"
+    return "未回应"
+
+
+async def arbitration_node(state: DebateState) -> dict:
+    """Arbitrator intervenes when debate fails to converge."""
+    ctx, budget = _build_context(state)
+
+    disputes = _extract_unresolved_disputes(state)
+
+    if not disputes:
+        return {
+            "converged": True,
+            "convergence_reason": "仲裁判定：无实质未解决争议，等效收敛",
+            "arbitration_result": {},
+            "must_fix_items": [],
+        }
+
+    await _notify({
+        "type": "status",
+        "content": f"辩论未收敛，Arbitrator 正在仲裁 {len(disputes)} 条争议...",
+    })
+
+    arbitration_result = await arbitrator_agent.arbitrate(ctx, budget, disputes)
+
+    await _notify({
+        "type": "arbitration_complete",
+        "disputes_count": len(disputes),
+        "overall_verdict": arbitration_result.get("overall_verdict"),
+        "summary": arbitration_result.get("summary", ""),
+    })
+
+    overall = arbitration_result.get("overall_verdict", "not_deliverable")
+    rulings = arbitration_result.get("rulings", [])
+    must_fix = [r for r in rulings if r.get("verdict") == "must_fix"]
+
+    if overall == "deliverable" or not must_fix:
+        return {
+            "converged": True,
+            "convergence_reason": f"仲裁裁决：代码可交付（{len(disputes)} 条争议已裁决）",
+            "arbitration_result": arbitration_result,
+            "must_fix_items": [],
+        }
+
+    if overall == "fix_then_deliver" and len(must_fix) <= 3:
+        has_critical = any(
+            r.get("re_assessed_severity") == "critical" for r in must_fix
+        )
+        if not has_critical:
+            return {
+                "converged": False,
+                "convergence_reason": "仲裁裁决：需修复后交付",
+                "arbitration_result": arbitration_result,
+                "must_fix_items": must_fix,
+            }
+
+    return {
+        "converged": True,
+        "convergence_reason": "仲裁裁决：建议人工审查",
+        "arbitration_result": arbitration_result,
+        "must_fix_items": [],
+    }
+
+
+def _arbitration_edge(state: DebateState) -> str:
+    must_fix = state.get("must_fix_items", [])
+    if must_fix:
+        return "fix"
+    return "deliver"
+
+
+async def final_fix_node(state: DebateState) -> dict:
+    """Coder fixes must_fix items after arbitration."""
+    ctx, budget = _build_context(state)
+    must_fix_items = state.get("must_fix_items", [])
+
+    if not must_fix_items:
+        return {"converged": True, "convergence_reason": "无需修复"}
+
+    fix_list = "\n".join(
+        f"{i+1}. [{item.get('re_assessed_severity', '?')}] {item.get('reasoning', '')}"
+        for i, item in enumerate(must_fix_items)
+    )
+
+    fix_prompt = (
+        f"仲裁裁决要求你修复以下 {len(must_fix_items)} 个问题。\n"
+        f"只修复这些具体问题，不要做其他改动。\n"
+        f"提交前请用 run_code_snippet 自测修复后的代码。\n\n"
+        f"{fix_list}"
+    )
+
+    await _notify({"type": "agent_start", "agent": "coder"})
+
+    start = time.monotonic()
+    response = await coder_agent.speak(ctx, fix_prompt, budget)
+    record_agent_call("coder", response.tokens_used, time.monotonic() - start)
+
+    new_code = response.code or state.get("current_code", "")
+
+    new_msg = {
+        "agent": "coder",
+        "content": f"[仲裁后修复] {response.content}",
+        "round": state["round"] + 1,
+        "code": response.code,
+        "structured": response.structured,
+    }
+    await _notify({"type": "message", **new_msg})
+
+    # Arbitrator reviews the fix
+    await _notify({
+        "type": "status",
+        "content": "Arbitrator 正在复核修复结果...",
+    })
+
+    ctx.current_code = new_code
+    reviews = await arbitrator_agent.review_fixes(ctx, budget, must_fix_items)
+
+    not_fixed = [r for r in reviews if r.get("status") != "fixed"]
+
+    if not_fixed:
+        await _notify({
+            "type": "status",
+            "content": f"复核发现 {len(not_fixed)} 项未完全修复，Coder 正在补修...",
+        })
+
+        not_fixed_desc = "\n".join(
+            f"- {r.get('dispute_id', '?')}: {r.get('review_comment', '')}"
+            for r in not_fixed
+        )
+        refix_prompt = (
+            f"Arbitrator 复核发现以下 {len(not_fixed)} 项未正确修复：\n"
+            f"{not_fixed_desc}\n"
+            f"请针对性修复，提交前用 run_code_snippet 自测。"
+        )
+
+        start = time.monotonic()
+        refix_response = await coder_agent.speak(ctx, refix_prompt, budget)
+        record_agent_call("coder", refix_response.tokens_used, time.monotonic() - start)
+
+        if refix_response.code:
+            new_code = refix_response.code
+
+        refix_msg = {
+            "agent": "coder",
+            "content": f"[补修] {refix_response.content}",
+            "round": state["round"] + 1,
+            "code": refix_response.code,
+            "structured": refix_response.structured,
+        }
+        await _notify({"type": "message", **refix_msg})
+
+        return {
+            "current_code": new_code,
+            "messages": [new_msg, refix_msg],
+            "budget_spent": budget.spent,
+            "converged": True,
+            "convergence_reason": "仲裁后修复完成（含补修）",
+        }
+
+    return {
+        "current_code": new_code,
+        "messages": [new_msg],
+        "budget_spent": budget.spent,
+        "converged": True,
+        "convergence_reason": "仲裁后修复完成",
+    }
+
+
 async def judge_node(state: DebateState) -> dict:
     ctx, budget = _build_context(state)
     report = await judge_agent.summarize(ctx, budget)
@@ -359,14 +690,19 @@ _compiled_graph = None
 def build_debate_graph():
     graph = StateGraph(DebateState)
 
+    graph.add_node("plan", plan_node)
     graph.add_node("coder", coder_node)
     graph.add_node("security", security_node)
     graph.add_node("performance", performance_node)
     graph.add_node("correctness", correctness_node)
     graph.add_node("cross_review", cross_review_node)
+    graph.add_node("arbitration", arbitration_node)
+    graph.add_node("final_fix", final_fix_node)
     graph.add_node("judge", judge_node)
 
-    graph.set_entry_point("coder")
+    graph.set_entry_point("plan")
+
+    graph.add_edge("plan", "coder")
 
     graph.add_edge("coder", "security")
     graph.add_edge("coder", "performance")
@@ -382,9 +718,20 @@ def build_debate_graph():
         {
             "continue": "coder",
             "converged": "judge",
-            "budget_exceeded": "judge",
+            "budget_exceeded": "arbitration",
         },
     )
+
+    graph.add_conditional_edges(
+        "arbitration",
+        _arbitration_edge,
+        {
+            "deliver": "judge",
+            "fix": "final_fix",
+        },
+    )
+
+    graph.add_edge("final_fix", "judge")
     graph.add_edge("judge", END)
 
     return graph
@@ -468,6 +815,10 @@ async def run_debate_with_graph(
         "budget_spent": 0,
         "budget_total": config.max_tokens,
         "judge_report": {},
+        "arbitration_result": {},
+        "must_fix_items": [],
+        "convergence_reason": "",
+        "selected_plan": "",
         "config": {
             "max_rounds": config.max_rounds,
             "attackers": config.attackers,
@@ -624,11 +975,26 @@ async def run_debate_with_graph(
             total_latency_ms=elapsed_ms,
             cost_usd=cost_usd,
         ),
-        converged=is_converged,
-        convergence_reason=(
-            "各方达成共识" if is_converged else "达到最大轮次或预算上限"
+        quality_report=QualityReport(
+            star_rating=judge_report.get("star_rating", 0),
+            star_comment=judge_report.get("star_comment", ""),
+            resolved_issues=judge_report.get("resolved_issues", []),
+            unresolved_issues=judge_report.get("unresolved_issues", []),
+            score_security=judge_report.get("score_security", 0),
+            score_performance=judge_report.get("score_performance", 0),
+            score_correctness=judge_report.get("score_correctness", 0),
+            usage_advice=judge_report.get("usage_advice", ""),
         ),
-        metadata={"engine": "langgraph", "thread_id": thread_id},
+        converged=is_converged,
+        convergence_reason=final_state.get(
+            "convergence_reason",
+            "各方达成共识" if is_converged else "达到最大轮次或预算上限",
+        ),
+        metadata={
+            "engine": "langgraph",
+            "thread_id": thread_id,
+            "arbitration": final_state.get("arbitration_result") or None,
+        },
     )
 
     await _notify({"type": "done"})

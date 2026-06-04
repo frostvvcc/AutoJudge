@@ -18,6 +18,7 @@ class BudgetManager:
             "correctness": 2000,
             "cross_review": 1000,
             "judge": 3000,
+            "arbitrator": 3000,
         }
         self.cache_stats = {"read": 0, "creation": 0}
         self._latency_ms = 0

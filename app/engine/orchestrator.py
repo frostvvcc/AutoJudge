@@ -288,7 +288,8 @@ class DebateOrchestrator:
         # Stage 1: Coder speaks
         if context.round == 1:
             coder_prompt = (
-                f"根据以下需求生成代码，并简要说明你的设计思路：\n{context.requirement}"
+                f"根据以下需求生成代码，并简要说明你的设计思路：\n{context.requirement}\n\n"
+                "提交前请用 run_code_snippet 自测代码能否正常运行。"
             )
             if context.extra_context:
                 coder_prompt += f"\n\n补充需求：{context.extra_context}"
@@ -297,6 +298,7 @@ class DebateOrchestrator:
                 "请回应上一轮各 Attacker 的意见。"
                 "对每个攻击：如果合理，承认并修复；如果不合理，调用工具验证后给出反驳证据。"
                 "如果有修复，贴出完整的新版代码。"
+                "提交前请用 run_code_snippet 自测修复后的代码。"
             )
             # Memory Layer 3: retrieve historical fix patterns for current issues
             last_findings = self._get_latest_findings(context)
