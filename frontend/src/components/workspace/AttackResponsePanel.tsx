@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import type { DebateMessage } from '../../types/debate';
+import PlanDisplayCard from './PlanDisplayCard';
 import { AGENT_COLORS, AGENT_LABELS, AGENT_DOTS } from '../../types/debate';
 
 interface Props {
@@ -47,9 +48,13 @@ export default function AttackResponsePanel({ messages, currentRound: _currentRo
             )}
 
             {/* Coder responses */}
-            {coderMsgs.map((msg, i) => (
-              <CoderResponseCard key={`coder-${round}-${i}`} message={msg} />
-            ))}
+            {coderMsgs.map((msg, i) =>
+              msg.content.startsWith('[方案设计]') ? (
+                <PlanDisplayCard key={`plan-${round}-${i}`} content={msg.content} />
+              ) : (
+                <CoderResponseCard key={`coder-${round}-${i}`} message={msg} />
+              ),
+            )}
 
             {/* Attackers - side by side */}
             {attackerMsgs.length > 0 && (
