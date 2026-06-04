@@ -481,8 +481,15 @@ async def _call_anthropic_proxy(
 def _is_retryable(exc: BaseException) -> bool:
     if isinstance(exc, TimeoutError):
         return True
-    if isinstance(exc, RuntimeError) and "timed out" in str(exc).lower():
+    err_str = str(exc).lower()
+    if isinstance(exc, RuntimeError) and ("timed out" in err_str or "503" in err_str or "524" in err_str):
         return True
+    try:
+        import httpx
+        if isinstance(exc, (httpx.ReadTimeout, httpx.ProxyError, httpx.RemoteProtocolError)):
+            return True
+    except ImportError:
+        pass
     try:
         import anthropic
         if isinstance(exc, (anthropic.APITimeoutError, anthropic.RateLimitError)):
