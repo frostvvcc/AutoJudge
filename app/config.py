@@ -5,8 +5,8 @@ from pydantic import Field
 class Settings(BaseSettings):
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
-    # LLM backend: "claude_cli" (claude -p) or "anthropic_api" (direct SDK)
-    llm_backend: str = Field(default="claude_cli", alias="LLM_BACKEND")
+    # LLM backend: "anthropic_proxy" (proxy) or "anthropic_api" (direct SDK)
+    llm_backend: str = Field(default="anthropic_proxy", alias="LLM_BACKEND")
 
     # Only needed when llm_backend = "anthropic_api"
     anthropic_api_key: str = Field(default="", alias="ANTHROPIC_API_KEY")
@@ -14,11 +14,6 @@ class Settings(BaseSettings):
     # Only needed for ChromaDB embedding (Memory Layer 1 & 3)
     # If empty, ChromaDB uses its default embedding model (no external API needed)
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
-
-    # claude -p settings
-    claude_cli_path: str = Field(default="claude", alias="CLAUDE_CLI_PATH")
-    claude_cli_model: str = Field(default="", alias="CLAUDE_CLI_MODEL")
-    claude_cli_timeout: int = Field(default=120, alias="CLAUDE_CLI_TIMEOUT")
 
     # Anthropic-compatible proxy settings (when llm_backend = "anthropic_proxy")
     anthropic_proxy_base_url: str = Field(default="", alias="ANTHROPIC_PROXY_BASE_URL")
