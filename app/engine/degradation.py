@@ -51,6 +51,15 @@ class DegradationManager:
         )
         self._cache: ResultCache | None = None
 
+    @staticmethod
+    def _compute_l0_timeout(config: DebateConfig) -> int:
+        agent_call_seconds = 40
+        per_round = agent_call_seconds + max(
+            len(config.attackers) * agent_call_seconds, agent_call_seconds
+        ) + (agent_call_seconds if not config.skip_cross_review else 0)
+        overhead = agent_call_seconds * 3
+        return int((config.max_rounds * per_round + overhead) * 1.5)
+
     def _get_cache(self) -> ResultCache:
         if self._cache is None:
             from app.db.redis import get_redis
@@ -107,6 +116,7 @@ class DegradationManager:
             try:
                 from app.engine.graph import run_debate_with_graph
 
+                l0_timeout = self._compute_l0_timeout(config)
                 result = await asyncio.wait_for(
                     run_debate_with_graph(
                         requirement=requirement,
@@ -116,7 +126,7 @@ class DegradationManager:
                         api_key=api_key,
                         on_progress=on_progress,
                     ),
-                    timeout=300,
+                    timeout=l0_timeout,
                 )
                 self.circuit_breaker.record_success()
                 return result

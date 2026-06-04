@@ -21,8 +21,65 @@ from app.engine.resource_manager import ResourceManager
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/v1", tags=["generate"])
 
+
+def _compute_session_timeout(config: DebateConfig) -> int:
+    """Compute WebSocket/REST session timeout based on debate configuration.
+
+    Models the expected wall-clock time as:
+      per_round = coder_call + max(parallel_attackers) + cross_review
+      total = rounds * per_round + overhead(requirement_parse + test_runner + judge)
+    Then adds a 60% buffer for network/scheduling variance.
+    """
+    agent_call_seconds = 40
+    per_round = agent_call_seconds + (
+        max(len(config.attackers) * agent_call_seconds, agent_call_seconds)
+    ) + (agent_call_seconds if not config.skip_cross_review else 0)
+    overhead = agent_call_seconds * 3
+    return int((config.max_rounds * per_round + overhead) * 1.6)
+
 degradation_mgr = DegradationManager()
 resource_mgr = ResourceManager()
+
+
+def _build_partial_result(
+    collected_messages: list[dict], language: str, reason: str
+) -> DebateResult:
+    """Recover whatever the debate produced before interruption/timeout.
+
+    Scans collected messages for the last Coder code submission so the
+    user gets something useful instead of an empty string.
+    """
+    last_code = ""
+    for msg in reversed(collected_messages):
+        if msg.get("agent") == "coder" and msg.get("code"):
+            last_code = msg["code"]
+            break
+
+    rounds: dict[int, list[dict]] = {}
+    for msg in collected_messages:
+        r = msg.get("round", 0)
+        rounds.setdefault(r, []).append({
+            "agent": msg.get("agent", "?"),
+            "content": msg.get("content", ""),
+            "code": msg.get("code"),
+        })
+    transcript = [
+        {"round": r, "messages": msgs}
+        for r, msgs in sorted(rounds.items())
+    ]
+
+    return DebateResult(
+        code=last_code,
+        language=language,
+        debate={
+            "total_rounds": max(rounds.keys()) if rounds else 0,
+            "converged": False,
+            "consensus_reason": reason,
+            "transcript": transcript,
+        },
+        convergence_reason=reason,
+        metadata={"partial": True},
+    )
 
 
 async def _save_session(
@@ -192,8 +249,10 @@ async def websocket_generate(websocket: WebSocket):
         except Exception:
             pass
 
+    session_timeout = _compute_session_timeout(config)
+
     try:
-        async with asyncio.timeout(300):
+        async with asyncio.timeout(session_timeout):
             listener_task = asyncio.create_task(listen_for_intervention())
 
             async def run_debate():
@@ -210,10 +269,8 @@ async def websocket_generate(websocket: WebSocket):
             try:
                 result = await debate_task
             except asyncio.CancelledError:
-                result = DebateResult(
-                    code="",
-                    language=language,
-                    convergence_reason="用户手动终止",
+                result = _build_partial_result(
+                    collected_messages, language, "用户手动终止"
                 )
             finally:
                 stop_event.set()
@@ -245,9 +302,18 @@ async def websocket_generate(websocket: WebSocket):
         })
 
     except asyncio.TimeoutError:
-        await websocket.send_json({
-            "type": "error", "message": "Session timeout (5 min)"
-        })
+        result = _build_partial_result(
+            collected_messages, language,
+            f"会话超时（{session_timeout}s），返回已完成的部分结果",
+        )
+        try:
+            await websocket.send_json({
+                "type": "result",
+                "data": result.model_dump(),
+                "partial": True,
+            })
+        except Exception:
+            pass
     except WebSocketDisconnect:
         logger.info("websocket_disconnected")
     except Exception as e:

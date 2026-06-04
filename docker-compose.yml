@@ -17,9 +17,12 @@ services:
     volumes:
       - redis_data:/data
 
-  # Python sandbox for code execution verification
+  # Pre-built sandbox with pytest for code execution verification
   sandbox:
-    image: python:3.11-slim
+    build:
+      context: .
+      dockerfile: Dockerfile.sandbox
+    image: autojudge-sandbox:latest
     command: ["sleep", "infinity"]
     network_mode: none
     read_only: true

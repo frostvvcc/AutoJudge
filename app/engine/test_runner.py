@@ -188,7 +188,7 @@ class TestRunner:
                     "-v", f"{tmpdir}:/workspace:ro",
                     "-w", "/workspace",
                     "--tmpfs", "/tmp:size=64m",
-                    "python:3.11-slim",
+                    "autojudge-sandbox:latest",
                     "python", "-m", "pytest", "test_solution.py",
                     "-v", "--tb=short",
                     stdout=asyncio.subprocess.PIPE,
