@@ -72,6 +72,41 @@ class SecurityAttacker(BaseAgent):
 
     async def _run_static_analysis(self, code: str) -> list[str]:
         findings = []
+
+        try:
+            from app.mcp.client import get_code_analysis_client
+
+            client = await get_code_analysis_client()
+
+            bandit_result = await client.call_tool(
+                "bandit_scan", {"code": code, "language": "python"}
+            )
+            for item in bandit_result.get("results", []):
+                findings.append(
+                    f"[bandit {item.get('test_id', '?')}] "
+                    f"Severity: {item.get('issue_severity', '?')} | "
+                    f"Line {item.get('line_number', '?')}: "
+                    f"{item.get('issue_text', '?')}"
+                )
+
+            semgrep_result = await client.call_tool(
+                "semgrep_scan", {"code": code, "language": "python"}
+            )
+            for item in semgrep_result.get("results", []):
+                findings.append(
+                    f"[semgrep] {item.get('check_id', '?')}: "
+                    f"{item.get('extra', {}).get('message', '?')}"
+                )
+
+            return findings
+
+        except Exception as e:
+            logger.warning("mcp_static_analysis_failed: %s, trying direct import", e)
+
+        return await self._run_static_analysis_fallback(code)
+
+    async def _run_static_analysis_fallback(self, code: str) -> list[str]:
+        findings = []
         try:
             from app.mcp.servers.code_analysis import bandit_scan
             result = await bandit_scan(code, "python")

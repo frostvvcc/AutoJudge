@@ -16,6 +16,7 @@ from app.db.engine import engine
 from app.db.models import Base
 from app.db.redis import init_redis, close_redis, get_redis
 from app.api.middleware.auth import AuthMiddleware
+from app.mcp.client import close_code_analysis_client
 from app.tracing.tracer import setup_langsmith
 
 logging.basicConfig(
@@ -40,6 +41,7 @@ async def lifespan(app: FastAPI):
 
     yield
 
+    await close_code_analysis_client()
     await close_redis()
     await engine.dispose()
 

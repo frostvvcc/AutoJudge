@@ -162,8 +162,9 @@ if __name__ == "__main__":
         from mcp.server.stdio import stdio_server
 
         async def main():
+            init_options = srv.create_initialization_options()
             async with stdio_server() as (read, write):
-                await srv.run(read, write)
+                await srv.run(read, write, init_options)
 
         asyncio.run(main())
     else:
