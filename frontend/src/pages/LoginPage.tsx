@@ -51,9 +51,11 @@ export default function LoginPage() {
           )}
 
           <div>
-            <label className="block text-sm text-gray-400 mb-1.5">用户名或邮箱</label>
+            <label htmlFor="login-id" className="block text-sm text-gray-400 mb-1.5">用户名或邮箱</label>
             <input
+              id="login-id"
               type="text"
+              autoComplete="username"
               value={loginStr}
               onChange={(e) => setLoginStr(e.target.value)}
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500"
@@ -63,9 +65,11 @@ export default function LoginPage() {
           </div>
 
           <div>
-            <label className="block text-sm text-gray-400 mb-1.5">密码</label>
+            <label htmlFor="login-pw" className="block text-sm text-gray-400 mb-1.5">密码</label>
             <input
+              id="login-pw"
               type="password"
+              autoComplete="current-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500"

@@ -15,6 +15,7 @@ export default function HistoryDetailPage() {
   const [detail, setDetail] = useState<api.SessionDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [copied, setCopied] = useState(false);
 
   useEffect(() => {
     if (!sid) return;
@@ -49,13 +50,14 @@ export default function HistoryDetailPage() {
 
   const risk = detail.risk_json as Record<string, string> | null;
   const summary = detail.summary_json as Record<string, unknown> | null;
-  const metrics = detail.metrics_json as Record<string, unknown> | null;
 
   const riskColor = (level: string) => {
+    if (level === 'none') return 'text-green-400';
     if (level === 'low') return 'text-green-400';
     if (level === 'medium') return 'text-yellow-400';
-    if (level === 'high') return 'text-red-400';
-    return 'text-gray-400';
+    if (level === 'high') return 'text-orange-400';
+    if (level === 'critical') return 'text-red-400';
+    return 'text-gray-500';
   };
 
   const groupedMessages: Record<number, api.SessionMessage[]> = {};
@@ -182,10 +184,14 @@ export default function HistoryDetailPage() {
                 <div className="px-4 py-2 border-b border-gray-800 flex items-center justify-between">
                   <span className="text-xs text-gray-400 font-medium">最终代码</span>
                   <button
-                    onClick={() => navigator.clipboard.writeText(detail.result_code || '')}
-                    className="text-xs text-gray-500 hover:text-gray-300"
+                    onClick={() => {
+                      navigator.clipboard.writeText(detail.result_code || '');
+                      setCopied(true);
+                      setTimeout(() => setCopied(false), 2000);
+                    }}
+                    className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
                   >
-                    复制
+                    {copied ? '已复制 ✓' : '复制'}
                   </button>
                 </div>
                 <SyntaxHighlighter
@@ -245,12 +251,12 @@ export default function HistoryDetailPage() {
                     </span>
                   </div>
                 </div>
-                {summary.key_improvements &&
-                  (summary.key_improvements as string[]).length > 0 && (
+                {Array.isArray(summary.key_improvements) &&
+                  summary.key_improvements.length > 0 && (
                     <div className="mt-3 pt-3 border-t border-gray-800">
                       <p className="text-xs text-gray-500 mb-1">关键改进：</p>
                       <ul className="text-xs text-gray-400 space-y-1">
-                        {(summary.key_improvements as string[]).map((imp, i) => (
+                        {(summary.key_improvements as string[]).map((imp: string, i: number) => (
                           <li key={i}>- {imp}</li>
                         ))}
                       </ul>

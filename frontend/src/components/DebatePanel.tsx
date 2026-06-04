@@ -1,4 +1,5 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 import type { DebateMessage, DebateStatus } from '../types/debate';
 import { AGENT_COLORS, AGENT_LABELS, AGENT_DOTS } from '../types/debate';
 
@@ -6,9 +7,10 @@ interface Props {
   messages: DebateMessage[];
   currentRound: number;
   status: DebateStatus;
+  statusText?: string;
 }
 
-export default function DebatePanel({ messages, currentRound, status }: Props) {
+export default function DebatePanel({ messages, currentRound, status, statusText }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -53,7 +55,7 @@ export default function DebatePanel({ messages, currentRound, status }: Props) {
               <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
               <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
             </div>
-            分析中...
+            {statusText || '分析中...'}
           </div>
         )}
 
@@ -71,8 +73,13 @@ export default function DebatePanel({ messages, currentRound, status }: Props) {
   );
 }
 
+const COLLAPSE_THRESHOLD = 400;
+
 function MessageBubble({ message }: { message: DebateMessage }) {
   const { agent, content } = message;
+  const [expanded, setExpanded] = useState(false);
+  const isLong = content.length > COLLAPSE_THRESHOLD;
+
   const colorClass = AGENT_COLORS[agent] ?? AGENT_COLORS.system;
   const dotClass = AGENT_DOTS[agent] ?? AGENT_DOTS.system;
   const label = AGENT_LABELS[agent] ?? agent;
@@ -96,9 +103,24 @@ function MessageBubble({ message }: { message: DebateMessage }) {
           </span>
         )}
       </div>
-      <div className="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed">
-        {content}
+      <div
+        className={`text-sm text-gray-300 leading-relaxed prose prose-invert prose-sm max-w-none ${
+          isLong && !expanded ? 'max-h-[200px] overflow-hidden relative' : ''
+        }`}
+      >
+        <ReactMarkdown>{content}</ReactMarkdown>
+        {isLong && !expanded && (
+          <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-gray-900/90 to-transparent" />
+        )}
       </div>
+      {isLong && (
+        <button
+          onClick={() => setExpanded(!expanded)}
+          className="mt-1 text-xs text-blue-400 hover:text-blue-300"
+        >
+          {expanded ? '收起' : '展开全文'}
+        </button>
+      )}
     </div>
   );
 }

@@ -63,9 +63,11 @@ export default function RegisterPage() {
           )}
 
           <div>
-            <label className="block text-sm text-gray-400 mb-1.5">用户名</label>
+            <label htmlFor="reg-username" className="block text-sm text-gray-400 mb-1.5">用户名</label>
             <input
+              id="reg-username"
               type="text"
+              autoComplete="username"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500"
@@ -77,9 +79,11 @@ export default function RegisterPage() {
           </div>
 
           <div>
-            <label className="block text-sm text-gray-400 mb-1.5">邮箱</label>
+            <label htmlFor="reg-email" className="block text-sm text-gray-400 mb-1.5">邮箱</label>
             <input
+              id="reg-email"
               type="email"
+              autoComplete="email"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500"
@@ -89,9 +93,11 @@ export default function RegisterPage() {
           </div>
 
           <div>
-            <label className="block text-sm text-gray-400 mb-1.5">密码</label>
+            <label htmlFor="reg-password" className="block text-sm text-gray-400 mb-1.5">密码</label>
             <input
+              id="reg-password"
               type="password"
+              autoComplete="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500"
@@ -102,15 +108,20 @@ export default function RegisterPage() {
           </div>
 
           <div>
-            <label className="block text-sm text-gray-400 mb-1.5">确认密码</label>
+            <label htmlFor="reg-confirm" className="block text-sm text-gray-400 mb-1.5">确认密码</label>
             <input
+              id="reg-confirm"
               type="password"
+              autoComplete="new-password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
               className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500"
               placeholder="再次输入密码"
               required
             />
+            {confirmPassword && password !== confirmPassword && (
+              <p className="mt-1 text-xs text-red-400">两次密码输入不一致</p>
+            )}
           </div>
 
           <button

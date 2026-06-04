@@ -31,7 +31,12 @@ export default function App() {
                 {debate.statusText}
               </span>
             )}
-            <span className="text-sm text-blue-400 font-medium">新任务</span>
+            <button
+              onClick={debate.reset}
+              className="text-sm text-blue-400 font-medium hover:text-blue-300 transition-colors"
+            >
+              新任务
+            </button>
             <Link
               to="/history"
               className="text-sm text-gray-400 hover:text-white transition-colors"
@@ -93,6 +98,7 @@ export default function App() {
                 messages={debate.messages}
                 currentRound={debate.currentRound}
                 status={debate.status}
+                statusText={debate.statusText}
               />
             </div>
 
@@ -113,10 +119,27 @@ export default function App() {
           </div>
         )}
 
-        {/* Error */}
+        {/* Done / Error actions */}
+        {(debate.status === 'done' || debate.status === 'converged') && (
+          <div className="text-center">
+            <button
+              onClick={debate.reset}
+              className="px-6 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium text-white transition-colors"
+            >
+              新建任务
+            </button>
+          </div>
+        )}
+
         {debate.error && (
-          <div className="bg-red-900/30 border border-red-800 rounded-lg p-4">
+          <div className="bg-red-900/30 border border-red-800 rounded-lg p-4 flex items-center justify-between">
             <p className="text-red-400">{debate.error}</p>
+            <button
+              onClick={debate.reset}
+              className="shrink-0 ml-4 px-4 py-1.5 bg-gray-800 hover:bg-gray-700 rounded text-sm text-gray-300 transition-colors"
+            >
+              重试
+            </button>
           </div>
         )}
       </main>

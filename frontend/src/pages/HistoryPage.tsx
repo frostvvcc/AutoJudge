@@ -65,7 +65,6 @@ export default function HistoryPage() {
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     setPage(1);
-    fetchData();
   };
 
   const formatDate = (dateStr: string) => {
