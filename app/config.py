@@ -21,7 +21,7 @@ class Settings(BaseSettings):
 
     # Model names (used when llm_backend = "anthropic_api")
     default_model: str = Field(default="claude-opus-4-6", alias="DEFAULT_MODEL")
-    haiku_model: str = Field(default="claude-opus-4-6", alias="HAIKU_MODEL")
+    haiku_model: str = Field(default="claude-haiku-4-5-20251001", alias="HAIKU_MODEL")
 
     embedding_model: str = "text-embedding-3-small"
 
