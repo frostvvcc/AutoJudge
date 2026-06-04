@@ -368,14 +368,23 @@ async def _call_anthropic_proxy(
     tool_choice = tool_choice or default_tool_choice
     resolved_model = model or get_model_for_agent(agent)
 
+    # Prompt caching: system prompt + tools with cache_control
+    system_blocks = [
+        {"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}
+    ]
+
+    cached_tools = list(tools) if tools else []
+    if cached_tools:
+        cached_tools[-1] = {**cached_tools[-1], "cache_control": {"type": "ephemeral"}}
+
     body: dict = {
         "model": resolved_model,
         "max_tokens": max_tokens,
-        "system": system_prompt,
+        "system": system_blocks,
         "messages": messages,
     }
-    if tools:
-        body["tools"] = tools
+    if cached_tools:
+        body["tools"] = cached_tools
     if tool_choice:
         body["tool_choice"] = tool_choice
 
@@ -408,6 +417,8 @@ async def _call_anthropic_proxy(
             data = resp.json()
             usage = data.get("usage", {})
             total_tokens += usage.get("input_tokens", 0) + usage.get("output_tokens", 0)
+            total_cache_read = usage.get("cache_read_input_tokens", 0)
+            total_cache_creation = usage.get("cache_creation_input_tokens", 0)
 
             if agent != "coder" or data.get("stop_reason") != "tool_use":
                 break
@@ -459,6 +470,8 @@ async def _call_anthropic_proxy(
         code=code,
         structured=structured,
         tokens_used=total_tokens,
+        cache_read=total_cache_read,
+        cache_creation=total_cache_creation,
         latency_ms=elapsed_ms,
     )
 
