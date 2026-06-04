@@ -138,29 +138,32 @@ class DebateOrchestrator:
 
         # --- TestRunner: verify final code before Judge ---
         if context.current_code and budget.can_continue(reserve=0.10):
-            await self._notify(on_progress, {
-                "type": "status", "content": "代码执行验证中..."
-            })
-            verify_result = await self.test_runner.verify(
-                context.current_code,
-                requirement,
-                llm_client=None,
-                debate_context=context,
-                language=language,
-            )
-            if not verify_result.passed and budget.can_continue(reserve=0.10):
-                context.add_message(
-                    "system",
-                    f"代码执行验证失败：\n{verify_result.stderr}\n请修复后重新提交。",
+            try:
+                await self._notify(on_progress, {
+                    "type": "status", "content": "代码执行验证中..."
+                })
+                verify_result = await self.test_runner.verify(
+                    context.current_code,
+                    requirement,
+                    llm_client=None,
+                    debate_context=context,
+                    language=language,
                 )
-                fix_response = await self.coder.speak(
-                    context, "修复测试失败的问题，贴出完整的修复后代码。", budget
-                )
-                context.add_message(
-                    "coder", fix_response.content,
-                    code=fix_response.code,
-                    structured=fix_response.structured,
-                )
+                if not verify_result.passed and budget.can_continue(reserve=0.10):
+                    context.add_message(
+                        "system",
+                        f"代码执行验证失败：\n{verify_result.stderr}\n请修复后重新提交。",
+                    )
+                    fix_response = await self.coder.speak(
+                        context, "修复测试失败的问题，贴出完整的修复后代码。", budget
+                    )
+                    context.add_message(
+                        "coder", fix_response.content,
+                        code=fix_response.code,
+                        structured=fix_response.structured,
+                    )
+            except Exception as e:
+                logger.warning("test_runner_error error=%s", e)
 
         # --- Judge ---
         await self._notify(on_progress, {

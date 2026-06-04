@@ -151,8 +151,19 @@ export function DebateProvider({ children }: { children: ReactNode }) {
         setStatus('error');
       };
 
-      ws.onclose = () => {
+      ws.onclose = (event) => {
         wsRef.current = null;
+        setStatus((prev) => {
+          if (prev === 'running' || prev === 'connecting') {
+            setError(
+              event.code === 1000
+                ? '连接已关闭'
+                : `连接意外断开 (${event.code || 'unknown'})`,
+            );
+            return 'error';
+          }
+          return prev;
+        });
       };
     },
     [handleEvent],

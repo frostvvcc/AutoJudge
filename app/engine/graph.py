@@ -472,25 +472,28 @@ async def run_debate_with_graph(
     # --- Post-processing: TestRunner ---
     final_code = final_state.get("current_code", "")
     if final_code:
-        test_runner = TestRunner()
-        ctx_for_test = DebateContext(requirement, config)
-        for msg_dict in final_state.get("messages", []):
-            ctx_for_test.messages.append(
-                DebateMessage(
-                    agent=msg_dict["agent"],
-                    content=msg_dict["content"],
-                    round=msg_dict.get("round", 0),
-                    structured=msg_dict.get("structured"),
+        try:
+            test_runner = TestRunner()
+            ctx_for_test = DebateContext(requirement, config)
+            for msg_dict in final_state.get("messages", []):
+                ctx_for_test.messages.append(
+                    DebateMessage(
+                        agent=msg_dict["agent"],
+                        content=msg_dict["content"],
+                        round=msg_dict.get("round", 0),
+                        structured=msg_dict.get("structured"),
+                    )
                 )
+            verify_result = await test_runner.verify(
+                final_code, requirement,
+                llm_client=None,
+                debate_context=ctx_for_test,
+                language=language,
             )
-        verify_result = await test_runner.verify(
-            final_code, requirement,
-            llm_client=None,
-            debate_context=ctx_for_test,
-            language=language,
-        )
-        if not verify_result.passed:
-            logger.info("graph_test_verification_failed stderr=%s", verify_result.stderr[:200])
+            if not verify_result.passed:
+                logger.info("graph_test_verification_failed stderr=%s", verify_result.stderr[:200])
+        except Exception as e:
+            logger.warning("graph_test_runner_error error=%s", e)
 
     # --- Post-processing: Memory write-back ---
     accepted_findings = []
