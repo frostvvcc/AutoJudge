@@ -114,6 +114,7 @@ class DegradationManager:
                         framework=framework,
                         config=config,
                         api_key=api_key,
+                        on_progress=on_progress,
                     ),
                     timeout=300,
                 )

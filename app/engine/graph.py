@@ -59,6 +59,18 @@ from app.api.models.response import (
 
 logger = logging.getLogger(__name__)
 
+# ─── Progress callback registry (set per-invocation by run_debate_with_graph) ─
+
+_progress_callback: callable | None = None
+
+
+async def _notify(event: dict):
+    if _progress_callback:
+        try:
+            await _progress_callback(event)
+        except Exception:
+            pass
+
 
 # ─── State ──────────────────────────────────────────────────────────────────
 
@@ -124,6 +136,9 @@ async def coder_node(state: DebateState) -> dict:
     ctx, budget = _build_context(state)
     ctx.round = state["round"] + 1
 
+    await _notify({"type": "round_start", "round": ctx.round})
+    await _notify({"type": "agent_start", "agent": "coder"})
+
     if ctx.round == 1:
         prompt = f"根据以下需求生成代码，并简要说明你的设计思路：\n{ctx.requirement}"
         if ctx.extra_context:
@@ -146,6 +161,7 @@ async def coder_node(state: DebateState) -> dict:
         "code": response.code,
         "structured": response.structured,
     }
+    await _notify({"type": "message", **new_msg})
 
     return {
         "round": ctx.round,
@@ -161,6 +177,7 @@ async def _attacker_node(
     if agent_name in state.get("skip_list", []):
         return {}
 
+    await _notify({"type": "agent_start", "agent": agent_name})
     ctx, budget = _build_context(state)
 
     if state["round"] <= 1:
@@ -181,6 +198,7 @@ async def _attacker_node(
             "round": state["round"],
             "structured": response.structured,
         }
+        await _notify({"type": "message", **new_msg})
         return {
             "messages": [new_msg],
             "budget_spent": budget.spent,
@@ -386,10 +404,16 @@ async def run_debate_with_graph(
     framework: str | None = None,
     config: DebateConfig | None = None,
     api_key: str | None = None,
+    on_progress: callable = None,
 ) -> DebateResult:
     """Run a full debate through LangGraph with Memory/TestRunner/ComplexityRouter."""
+    global _progress_callback
+    _progress_callback = on_progress
+
     config = config or DebateConfig()
     start_time = time.monotonic()
+
+    await _notify({"type": "status", "content": "正在理解需求..."})
 
     # --- Pre-processing: requirement parsing + complexity routing ---
     parsed_req = await parse_requirement(requirement, language, framework)
@@ -524,10 +548,14 @@ async def run_debate_with_graph(
     if api_key:
         await user_prefs.update_from_request(api_key, {"language": language})
 
-    # --- Metrics ---
-    elapsed_ms = int((time.monotonic() - start_time) * 1000)
+    # --- Notify convergence ---
     final_round = final_state.get("round", 0)
     is_converged = final_state.get("converged", False)
+    if is_converged:
+        await _notify({"type": "converged", "round": final_round, "reason": "各方达成共识"})
+
+    # --- Metrics ---
+    elapsed_ms = int((time.monotonic() - start_time) * 1000)
 
     record_debate_complete(
         language=language,
@@ -556,7 +584,7 @@ async def run_debate_with_graph(
         for r, msgs in sorted(transcript_rounds.items())
     ]
 
-    return DebateResult(
+    result = DebateResult(
         code=final_code,
         language=language,
         confidence=judge_report.get("confidence", 0.0),
@@ -592,3 +620,7 @@ async def run_debate_with_graph(
         ),
         metadata={"engine": "langgraph", "thread_id": thread_id},
     )
+
+    _progress_callback = None
+    await _notify({"type": "done"})
+    return result

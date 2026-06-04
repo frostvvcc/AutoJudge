@@ -162,9 +162,6 @@ async def websocket_generate(websocket: WebSocket):
         max_tokens=config_data.get("max_tokens", 100_000),
     )
 
-    from app.engine.orchestrator import DebateOrchestrator
-    orchestrator = DebateOrchestrator()
-
     stop_event = asyncio.Event()
     debate_task: asyncio.Task | None = None
     collected_messages: list[dict] = []
@@ -177,19 +174,7 @@ async def websocket_generate(websocket: WebSocket):
                     websocket.receive_json(), timeout=1.0
                 )
                 msg_type = msg.get("type")
-                if msg_type == "skip_attacker":
-                    attacker = msg.get("attacker", "")
-                    if attacker in ("security", "performance", "correctness"):
-                        config.attackers = [
-                            a for a in config.attackers if a != attacker
-                        ]
-                        logger.info("user_skipped_attacker attacker=%s", attacker)
-                elif msg_type == "add_context":
-                    extra = msg.get("content", "")
-                    if extra:
-                        orchestrator._live_extra_context = extra
-                        logger.info("user_added_context")
-                elif msg_type == "force_stop":
+                if msg_type == "force_stop":
                     stop_event.set()
                     if debate_task and not debate_task.done():
                         debate_task.cancel()
@@ -212,7 +197,7 @@ async def websocket_generate(websocket: WebSocket):
             listener_task = asyncio.create_task(listen_for_intervention())
 
             async def run_debate():
-                return await orchestrator.run(
+                return await degradation_mgr.execute_with_degradation(
                     requirement=task,
                     language=language,
                     framework=framework,
