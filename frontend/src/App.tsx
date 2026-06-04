@@ -1,8 +1,6 @@
-import { useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from './contexts/AuthContext';
-import { useWebSocket } from './hooks/useWebSocket';
-import { useDebateState } from './hooks/useDebateState';
+import { useDebate } from './contexts/DebateContext';
 import InputForm from './components/InputForm';
 import DebatePanel from './components/DebatePanel';
 import CodeEditor from './components/CodeEditor';
@@ -10,51 +8,10 @@ import MetricsBar from './components/MetricsBar';
 import RiskGauge from './components/RiskGauge';
 import ConsensusIndicator from './components/ConsensusIndicator';
 
-const WS_URL = `ws://${window.location.host}/ws/generate`;
-
 export default function App() {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-  const ws = useWebSocket(WS_URL);
-  const debate = useDebateState();
-
-  const handleSubmit = useCallback(
-    (task: string, language: string) => {
-      debate.reset();
-      debate.setStatus('connecting');
-
-      ws.connect((event) => {
-        debate.handleEvent(event);
-      });
-
-      setTimeout(() => {
-        const token = localStorage.getItem('access_token');
-        ws.send({
-          type: 'start',
-          task,
-          language,
-          token,
-          config: {
-            max_rounds: 5,
-            attackers: ['security', 'performance', 'correctness'],
-          },
-        });
-      }, 500);
-    },
-    [ws, debate],
-  );
-
-  const handleSkipAttacker = useCallback(
-    (attacker: string) => {
-      ws.send({ type: 'skip_attacker', attacker });
-    },
-    [ws],
-  );
-
-  const handleStop = useCallback(() => {
-    ws.send({ type: 'force_stop' });
-    ws.close();
-  }, [ws]);
+  const debate = useDebate();
 
   return (
     <div className="min-h-screen bg-gray-950">
@@ -69,7 +26,7 @@ export default function App() {
             </span>
           </div>
           <div className="flex items-center gap-4">
-            {debate.status === 'running' && (
+            {(debate.status === 'running' || debate.status === 'connecting') && (
               <span className="text-sm text-yellow-400 animate-pulse">
                 {debate.statusText}
               </span>
@@ -103,7 +60,7 @@ export default function App() {
       <main className="max-w-7xl mx-auto px-6 py-6 space-y-6">
         {/* Input Form */}
         <InputForm
-          onSubmit={handleSubmit}
+          onSubmit={debate.submit}
           disabled={debate.status === 'running' || debate.status === 'connecting'}
         />
 
@@ -117,13 +74,13 @@ export default function App() {
                 {debate.status === 'running' && (
                   <div className="flex gap-2">
                     <button
-                      onClick={() => handleSkipAttacker('performance')}
+                      onClick={() => debate.skipAttacker('performance')}
                       className="px-3 py-1 text-xs bg-gray-800 hover:bg-gray-700 rounded border border-gray-700"
                     >
                       跳过性能
                     </button>
                     <button
-                      onClick={handleStop}
+                      onClick={debate.stop}
                       className="px-3 py-1 text-xs bg-red-900/50 hover:bg-red-800/50 rounded border border-red-800"
                     >
                       终止

@@ -56,6 +56,8 @@ export interface WSEvent {
   reason?: string;
   data?: DebateResult;
   message?: string;
+  structured?: Record<string, unknown>;
+  session_sid?: string;
 }
 
 export type DebateStatus = 'idle' | 'connecting' | 'running' | 'converged' | 'done' | 'error';

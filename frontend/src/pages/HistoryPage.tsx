@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useDebate } from '../contexts/DebateContext';
 import * as api from '../lib/api';
 
 const LANG_LABELS: Record<string, string> = {
@@ -14,6 +15,7 @@ const LANG_LABELS: Record<string, string> = {
 
 export default function HistoryPage() {
   const { user, logout } = useAuth();
+  const debate = useDebate();
   const navigate = useNavigate();
 
   const [history, setHistory] = useState<api.PaginatedHistory | null>(null);
@@ -115,6 +117,26 @@ export default function HistoryPage() {
       </header>
 
       <main className="max-w-7xl mx-auto px-6 py-6 space-y-6">
+        {/* Running task banner */}
+        {(debate.status === 'running' || debate.status === 'connecting') && (
+          <Link
+            to="/"
+            className="block bg-blue-900/30 border border-blue-800 rounded-lg p-4 hover:bg-blue-900/40 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <div className="flex gap-1">
+                <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+                <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+                <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+              </div>
+              <span className="text-sm text-blue-300">
+                有任务正在生成中 — {debate.statusText || '处理中'}
+              </span>
+              <span className="text-xs text-blue-400 ml-auto">点击查看 &rarr;</span>
+            </div>
+          </Link>
+        )}
+
         {/* Stats Cards */}
         {stats && (
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
