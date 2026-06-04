@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import { useAuth } from '../contexts/AuthContext';
+import { Link } from 'react-router-dom';
+
 import { useDebate } from '../contexts/DebateContext';
 import * as api from '../lib/api';
+import NavBar from '../components/NavBar';
 
 const LANG_LABELS: Record<string, string> = {
   python: 'Python',
@@ -14,9 +15,7 @@ const LANG_LABELS: Record<string, string> = {
 };
 
 export default function HistoryPage() {
-  const { user, logout } = useAuth();
   const debate = useDebate();
-  const navigate = useNavigate();
 
   const [history, setHistory] = useState<api.PaginatedHistory | null>(null);
   const [stats, setStats] = useState<api.StatsOut | null>(null);
@@ -79,41 +78,7 @@ export default function HistoryPage() {
 
   return (
     <div className="min-h-screen bg-gray-950">
-      {/* Header */}
-      <header className="border-b border-gray-800 px-6 py-4">
-        <div className="flex items-center justify-between max-w-7xl mx-auto">
-          <div className="flex items-center gap-3">
-            <Link to="/" className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg" />
-              <h1 className="text-xl font-bold text-white">AutoJudge</h1>
-            </Link>
-          </div>
-          <div className="flex items-center gap-4">
-            <Link
-              to="/"
-              className="text-sm text-gray-400 hover:text-white transition-colors"
-            >
-              新任务
-            </Link>
-            <span className="text-sm text-blue-400 font-medium">历史记录</span>
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-full bg-gray-700 flex items-center justify-center text-xs text-white font-medium">
-                {user?.username?.[0]?.toUpperCase()}
-              </div>
-              <span className="text-sm text-gray-300">{user?.username}</span>
-            </div>
-            <button
-              onClick={() => {
-                logout();
-                navigate('/login');
-              }}
-              className="text-sm text-gray-500 hover:text-red-400 transition-colors"
-            >
-              退出
-            </button>
-          </div>
-        </div>
-      </header>
+      <NavBar />
 
       <main className="max-w-7xl mx-auto px-6 py-6 space-y-6">
         {/* Running task banner */}
