@@ -84,6 +84,7 @@ class DegradationManager:
         config: DebateConfig,
         on_progress: callable = None,
         api_key: str | None = None,
+        interrupt_handler: callable = None,
     ) -> DebateResult:
         # Check cache first
         cache = self._get_cache()
@@ -93,7 +94,8 @@ class DegradationManager:
             return cached
 
         result = await self._run_with_degradation(
-            requirement, language, framework, config, on_progress, api_key
+            requirement, language, framework, config, on_progress, api_key,
+            interrupt_handler,
         )
 
         # Store result in cache
@@ -110,6 +112,7 @@ class DegradationManager:
         config: DebateConfig,
         on_progress: callable = None,
         api_key: str | None = None,
+        interrupt_handler: callable = None,
     ) -> DebateResult:
         # L0: Full adversarial debate via LangGraph
         if self.circuit_breaker.state in ("closed", "half-open"):
@@ -125,6 +128,7 @@ class DegradationManager:
                         config=config,
                         api_key=api_key,
                         on_progress=on_progress,
+                        interrupt_handler=interrupt_handler,
                     ),
                     timeout=l0_timeout,
                 )

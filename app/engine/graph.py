@@ -21,7 +21,8 @@ from typing import TypedDict, Annotated
 
 from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.mysql.aio import AIOMySQLSaver
-from langgraph.types import interrupt
+from langgraph.types import interrupt, Command
+from langgraph.errors import GraphInterrupt
 
 from app.config import settings
 
@@ -547,6 +548,24 @@ async def arbitration_node(state: DebateState) -> dict:
         "summary": arbitration_result.get("summary", ""),
     })
 
+    # HITL: let user review arbitration ruling
+    if state.get("enable_interrupt"):
+        user_feedback = interrupt({
+            "type": "arbitration_review",
+            "rulings": arbitration_result.get("rulings", []),
+            "overall_verdict": arbitration_result.get("overall_verdict"),
+            "summary": arbitration_result.get("summary", ""),
+        })
+        if user_feedback and isinstance(user_feedback, dict):
+            overrides = user_feedback.get("overrides", {})
+            for ruling in arbitration_result.get("rulings", []):
+                did = ruling.get("dispute_id", "")
+                override = overrides.get(did)
+                if override and override.get("action") in ("upgrade", "downgrade", "dismiss"):
+                    new_verdict = override.get("new_verdict", ruling["verdict"])
+                    ruling["verdict"] = new_verdict
+                    ruling["reasoning"] += f"\n[用户调整] → {new_verdict}"
+
     overall = arbitration_result.get("overall_verdict", "not_deliverable")
     rulings = arbitration_result.get("rulings", [])
     must_fix = [r for r in rulings if r.get("verdict") == "must_fix"]
@@ -606,22 +625,64 @@ async def final_fix_node(state: DebateState) -> dict:
         f"{fix_list}"
     )
 
-    await _notify({"type": "agent_start", "agent": "coder"})
+    STRATEGY_ANGLES = [
+        "换一种数据结构或算法来实现同样功能",
+        "换一个实现层级（如从函数级改为模块级或路由级）",
+        "换一种依赖库来解决问题",
+        "简化需求范围，只修核心部分",
+    ]
+    strategy_idx = 0
+    new_code = state.get("current_code", "")
+    all_fix_msgs: list[dict] = []
 
-    start = time.monotonic()
-    response = await coder_agent.speak(ctx, fix_prompt, budget)
-    record_agent_call("coder", response.tokens_used, time.monotonic() - start)
+    for attempt in range(3):
+        current_prompt = fix_prompt if attempt == 0 else (
+            f"前一次修复失败了。请从不同角度考虑：\n"
+            f"策略：{STRATEGY_ANGLES[strategy_idx % len(STRATEGY_ANGLES)]}\n\n"
+            f"原始问题：\n{fix_list}\n\n"
+            f"提交前请用 run_code_snippet 自测修复后的代码。"
+        )
 
-    new_code = response.code or state.get("current_code", "")
+        if attempt > 0 and state.get("enable_interrupt"):
+            user_response = interrupt({
+                "type": "strategy_review",
+                "attempt": attempt + 1,
+                "strategy": STRATEGY_ANGLES[strategy_idx % len(STRATEGY_ANGLES)],
+                "original_issues": fix_list,
+            })
+            if user_response and isinstance(user_response, dict):
+                if user_response.get("action") == "user_strategy":
+                    current_prompt = (
+                        f"用户建议的修复思路：{user_response.get('message', '')}\n\n"
+                        f"原始问题：\n{fix_list}\n\n"
+                        f"请按用户思路修复，提交前用 run_code_snippet 自测。"
+                    )
 
-    new_msg = {
-        "agent": "coder",
-        "content": f"[仲裁后修复] {response.content}",
-        "round": state["round"] + 1,
-        "code": response.code,
-        "structured": response.structured,
-    }
-    await _notify({"type": "message", **new_msg})
+        await _notify({"type": "agent_start", "agent": "coder"})
+        await _notify({"type": "fix_progress", "attempt": attempt + 1, "max_attempts": 3})
+
+        start = time.monotonic()
+        response = await coder_agent.speak(ctx, current_prompt, budget)
+        record_agent_call("coder", response.tokens_used, time.monotonic() - start)
+
+        if response.code:
+            new_code = response.code
+            ctx.current_code = new_code
+
+        fix_msg = {
+            "agent": "coder",
+            "content": f"[修复 attempt {attempt+1}] {response.content}",
+            "round": state["round"] + 1,
+            "code": response.code,
+            "structured": response.structured,
+        }
+        await _notify({"type": "message", **fix_msg})
+        all_fix_msgs.append(fix_msg)
+
+        if response.code:
+            break
+
+        strategy_idx += 1
 
     # Arbitrator reviews the fix
     await _notify({
@@ -668,7 +729,7 @@ async def final_fix_node(state: DebateState) -> dict:
 
         return {
             "current_code": new_code,
-            "messages": [new_msg, refix_msg],
+            "messages": all_fix_msgs + [refix_msg],
             "budget_spent": budget.spent,
             "converged": True,
             "convergence_reason": "仲裁后修复完成（含补修）",
@@ -676,7 +737,7 @@ async def final_fix_node(state: DebateState) -> dict:
 
     return {
         "current_code": new_code,
-        "messages": [new_msg],
+        "messages": all_fix_msgs,
         "budget_spent": budget.spent,
         "converged": True,
         "convergence_reason": "仲裁后修复完成",
@@ -766,6 +827,7 @@ async def run_debate_with_graph(
     config: DebateConfig | None = None,
     api_key: str | None = None,
     on_progress: callable = None,
+    interrupt_handler: callable = None,
 ) -> DebateResult:
     """Run a full debate through LangGraph with Memory/TestRunner/ComplexityRouter."""
     _progress_callback.set(on_progress)
@@ -835,7 +897,7 @@ async def run_debate_with_graph(
             "max_tokens": config.max_tokens,
             "skip_cross_review": config.skip_cross_review,
         },
-        "enable_interrupt": False,
+        "enable_interrupt": interrupt_handler is not None,
     }
 
     # Inject Memory context into agent instances (via shared context patterns)
@@ -861,7 +923,27 @@ async def run_debate_with_graph(
         compiled = graph.compile(checkpointer=checkpointer)
         thread_id = str(uuid.uuid4())
         graph_config = {"configurable": {"thread_id": thread_id}}
-        final_state = await compiled.ainvoke(initial_state, graph_config)
+        # Interrupt-aware execution loop
+        invoke_input = initial_state
+        final_state = None
+        max_interrupts = 20
+
+        for _interrupt_round in range(max_interrupts):
+            try:
+                final_state = await compiled.ainvoke(invoke_input, graph_config)
+                break
+            except GraphInterrupt as gi:
+                if not interrupt_handler:
+                    invoke_input = Command(resume=None)
+                    continue
+                payload = gi.args[0] if gi.args else {}
+                user_response = await interrupt_handler(payload)
+                invoke_input = Command(resume=user_response)
+
+        if final_state is None:
+            final_state = await compiled.get_state(graph_config)
+            if hasattr(final_state, "values"):
+                final_state = final_state.values
 
     # --- Post-processing: TestRunner ---
     final_code = final_state.get("current_code", "")

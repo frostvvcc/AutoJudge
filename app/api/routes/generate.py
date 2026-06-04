@@ -224,6 +224,8 @@ async def websocket_generate(websocket: WebSocket):
     debate_task: asyncio.Task | None = None
     collected_messages: list[dict] = []
 
+    interrupt_queue: asyncio.Queue = asyncio.Queue()
+
     async def listen_for_intervention():
         nonlocal debate_task
         while not stop_event.is_set():
@@ -237,10 +239,23 @@ async def websocket_generate(websocket: WebSocket):
                     if debate_task and not debate_task.done():
                         debate_task.cancel()
                     logger.info("user_forced_stop")
+                elif msg_type == "interrupt_response":
+                    await interrupt_queue.put(msg.get("data", {}))
             except asyncio.TimeoutError:
                 continue
             except (WebSocketDisconnect, Exception):
                 break
+
+    async def handle_interrupt(payload: dict) -> dict:
+        """Send interrupt to frontend, wait for user response or timeout."""
+        try:
+            await websocket.send_json({"type": "interrupt", "payload": payload})
+        except Exception:
+            return {}
+        try:
+            return await asyncio.wait_for(interrupt_queue.get(), timeout=120)
+        except asyncio.TimeoutError:
+            return {}
 
     async def on_progress(event: dict):
         if event.get("type") == "message":
@@ -264,6 +279,7 @@ async def websocket_generate(websocket: WebSocket):
                     config=config,
                     on_progress=on_progress,
                     api_key=None,
+                    interrupt_handler=handle_interrupt,
                 )
 
             debate_task = asyncio.create_task(run_debate())
