@@ -1,0 +1,35 @@
+{
+  "task_id": "task_001",
+  "description": "实现一个用户登录API，接收邮箱和密码，验证后返回JWT token。要求：1) 密码使用bcrypt验证；2) 登录失败返回统一错误信息；3) 支持登录失败次数限制（5次/15分钟）；4) JWT包含用户ID和过期时间。",
+  "language": "python",
+  "framework": "fastapi",
+  "expected_issues": [
+    "sql_injection",
+    "plaintext_password",
+    "timing_attack",
+    "jwt_secret_hardcoded",
+    "no_rate_limit",
+    "error_message_leaks_user_existence"
+  ],
+  "test_cases": [
+    {
+      "input": "{'email': 'test@example.com', 'password': 'correct_password'}",
+      "expected": "200 with JWT token containing user_id and exp"
+    },
+    {
+      "input": "{'email': 'test@example.com', 'password': 'wrong_password'}",
+      "expected": "401 with generic error message, not revealing if email exists"
+    },
+    {
+      "input": "{'email': \"' OR 1=1 --\", 'password': 'anything'}",
+      "expected": "400 or 422 validation error, no SQL injection"
+    },
+    {
+      "input": "5 consecutive failed attempts for same email",
+      "expected": "429 rate limit after 5th attempt within 15 minutes"
+    }
+  ],
+  "difficulty": "medium",
+  "primary_attacker": "security",
+  "notes": "Tests security attacker's ability to detect auth vulnerabilities"
+}

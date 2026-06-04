@@ -1,0 +1,47 @@
+[
+  {
+    "session_id": "example_001",
+    "dispute_id": "dispute_001",
+    "attacker": "security",
+    "finding": "SQL injection via string concatenation in query",
+    "severity": "critical",
+    "human_verdict": "must_fix",
+    "human_reasoning": "Direct string concatenation in SQL query allows injection. The coder's rebuttal that 'input is validated elsewhere' is insufficient because validation can be bypassed."
+  },
+  {
+    "session_id": "example_002",
+    "dispute_id": "dispute_002",
+    "attacker": "performance",
+    "finding": "Using list.sort() instead of heapq for top-K selection",
+    "severity": "low",
+    "human_verdict": "dismissed",
+    "human_reasoning": "For the expected dataset size (< 1000 items), full sort is acceptable. The O(n log n) vs O(n log k) difference is negligible. Premature optimization."
+  },
+  {
+    "session_id": "example_003",
+    "dispute_id": "dispute_003",
+    "attacker": "correctness",
+    "finding": "Off-by-one error in sliding window boundary check",
+    "severity": "high",
+    "human_verdict": "must_fix",
+    "human_reasoning": "The window boundary uses '<' instead of '<=', causing the last element to be excluded. Test case [1,2,3] with window=3 returns [1,2] instead of [1,2,3]."
+  },
+  {
+    "session_id": "example_004",
+    "dispute_id": "dispute_004",
+    "attacker": "security",
+    "finding": "JWT secret key hardcoded in source code",
+    "severity": "high",
+    "human_verdict": "acknowledged",
+    "human_reasoning": "The hardcoded secret is a valid concern for production, but the task explicitly asks for a demo implementation. Should be flagged as a deployment note, not a blocking issue."
+  },
+  {
+    "session_id": "example_005",
+    "dispute_id": "dispute_005",
+    "attacker": "correctness",
+    "finding": "Race condition in concurrent counter increment",
+    "severity": "medium",
+    "human_verdict": "needs_human",
+    "human_reasoning": "The race condition exists but depends on deployment context. Single-process async code is safe; multi-process deployment requires Redis or DB-level locking. Cannot determine correct fix without knowing deployment architecture."
+  }
+]

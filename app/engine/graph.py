@@ -172,9 +172,22 @@ async def plan_node(state: DebateState) -> dict:
     )
 
     from app.llm.model_router import get_model_for_agent
+    from app.llm.client import call_agent
 
     start = time.monotonic()
-    response = await coder_agent.speak(ctx, prompt, budget, model=get_model_for_agent("planner"))
+    system = (
+        "你是方案设计师。根据用户需求设计 2 个不同方向的实现方案。"
+        "不写代码，只说方案。每个方案说明技术选型、核心流程、安全考虑、不包含什么。"
+    )
+    messages = [{"role": "user", "content": prompt}]
+    response = await call_agent(
+        agent="planner",
+        system_prompt=system,
+        messages=messages,
+        model=get_model_for_agent("planner"),
+        max_tokens=budget.get_max_tokens("coder"),
+    )
+    budget.record("coder", response.tokens_used)
     record_agent_call("coder", response.tokens_used, time.monotonic() - start)
 
     plans_content = response.content
@@ -431,12 +444,19 @@ async def cross_review_node(state: DebateState) -> dict:
             elif user_input.get("type") == "add_context":
                 updated_state["extra_context"] = user_input.get("content", "")
 
-    return _check_and_return_consensus(updated_state, round_msgs)
+    consensus_msgs = round_msgs + new_cross_msgs
+    return _check_and_return_consensus(updated_state, consensus_msgs)
 
 
 def _check_and_return_consensus(
     state: dict, round_msgs: list[dict]
 ) -> dict:
+    seen_agents: set[str] = set()
+    latest_per_agent: dict[str, dict] = {}
+    for m in round_msgs:
+        if m["agent"] in ("security", "performance", "correctness"):
+            latest_per_agent[m["agent"]] = m
+
     debate_msgs = [
         DebateMessage(
             agent=m["agent"],
@@ -444,7 +464,7 @@ def _check_and_return_consensus(
             round=m.get("round", 0),
             structured=m.get("structured"),
         )
-        for m in round_msgs
+        for m in latest_per_agent.values()
     ]
 
     result = consensus_detector.check_consensus(debate_msgs)
@@ -505,6 +525,43 @@ def _extract_unresolved_disputes(state: DebateState) -> list[dict]:
     return disputes
 
 
+SECURITY_REDLINE_CATEGORIES = {
+    "sql_injection", "rce", "command_injection",
+    "auth_bypass", "path_traversal", "xss",
+    "sql injection", "remote code execution",
+}
+
+
+def _security_redline_allows(ruling: dict, new_verdict: str) -> bool:
+    """Critical security issues cannot be downgraded by user override."""
+    if ruling.get("re_assessed_severity") != "critical":
+        return True
+    dispute_id = ruling.get("dispute_id", "").lower()
+    reasoning = ruling.get("reasoning", "").lower()
+    is_security_redline = any(
+        cat in dispute_id or cat in reasoning
+        for cat in SECURITY_REDLINE_CATEGORIES
+    )
+    if is_security_redline and new_verdict in ("dismissed", "acknowledged", "deferred"):
+        return False
+    return True
+
+
+def _needs_human_review(state: dict) -> bool:
+    """Check if the final result requires human review."""
+    arb = state.get("arbitration_result")
+    if not arb or not isinstance(arb, dict):
+        return False
+    rulings = arb.get("rulings", [])
+    needs_human_count = sum(1 for r in rulings if r.get("verdict") == "needs_human")
+    must_fix_count = sum(1 for r in rulings if r.get("verdict") == "must_fix")
+    has_unfixed_critical = any(
+        r.get("re_assessed_severity") == "critical" and r.get("verdict") == "must_fix"
+        for r in rulings
+    )
+    return needs_human_count > 0 or must_fix_count > 3 or has_unfixed_critical
+
+
 def _find_coder_response(state: DebateState, finding: dict) -> str:
     """Find Coder's response to a specific finding."""
     for msg in reversed(state.get("messages", [])):
@@ -563,6 +620,9 @@ async def arbitration_node(state: DebateState) -> dict:
                 override = overrides.get(did)
                 if override and override.get("action") in ("upgrade", "downgrade", "dismiss"):
                     new_verdict = override.get("new_verdict", ruling["verdict"])
+                    if not _security_redline_allows(ruling, new_verdict):
+                        ruling["reasoning"] += "\n[安全红线] 用户尝试降级被拒绝"
+                        continue
                     ruling["verdict"] = new_verdict
                     ruling["reasoning"] += f"\n[用户调整] → {new_verdict}"
 
@@ -1086,6 +1146,7 @@ async def run_debate_with_graph(
             "engine": "langgraph",
             "thread_id": thread_id,
             "arbitration": final_state.get("arbitration_result") or None,
+            "requires_human_review": _needs_human_review(final_state),
         },
     )
 

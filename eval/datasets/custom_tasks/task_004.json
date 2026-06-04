@@ -1,0 +1,43 @@
+{
+  "task_id": "task_004",
+  "description": "实现一个文件上传处理器（FastAPI endpoint），支持以下功能：1) 接受图片（jpg/png/gif）和PDF文件，限制单文件10MB；2) 验证文件MIME类型（不仅依赖扩展名）；3) 生成唯一文件名存储到本地目录；4) 返回文件URL和元信息（大小、类型、MD5）；5) 支持同时上传多个文件。",
+  "language": "python",
+  "framework": "fastapi",
+  "expected_issues": [
+    "path_traversal_via_filename",
+    "mime_type_only_checks_extension",
+    "no_file_size_streaming_check",
+    "memory_exhaustion_large_file",
+    "ssrf_if_url_upload_supported",
+    "zip_bomb_not_detected",
+    "sync_file_write_blocks_event_loop",
+    "race_condition_filename_collision",
+    "no_virus_scan",
+    "xss_via_svg_upload"
+  ],
+  "test_cases": [
+    {
+      "input": "Upload valid 5MB JPEG file",
+      "expected": "200 with file URL, size=5MB, type=image/jpeg, MD5 hash"
+    },
+    {
+      "input": "Upload 15MB file",
+      "expected": "413 Request Entity Too Large"
+    },
+    {
+      "input": "Upload file named '../../etc/passwd.jpg' (path traversal)",
+      "expected": "Filename sanitized, stored safely in upload directory"
+    },
+    {
+      "input": "Upload .exe file renamed to .jpg",
+      "expected": "400 error: MIME type mismatch detected"
+    },
+    {
+      "input": "Upload 3 files simultaneously",
+      "expected": "200 with array of 3 file metadata objects"
+    }
+  ],
+  "difficulty": "medium",
+  "primary_attacker": "all",
+  "notes": "Tests all three attackers: security (path traversal, MIME bypass), correctness (edge cases), performance (blocking I/O)"
+}

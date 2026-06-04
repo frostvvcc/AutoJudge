@@ -1,0 +1,42 @@
+{
+  "task_id": "task_005",
+  "description": "实现一个API限流器（Rate Limiter），支持以下功能：1) 滑动窗口算法；2) 支持按IP和按用户ID两种限流维度；3) 可配置的限流规则（每分钟N次请求）；4) 作为FastAPI中间件使用；5) 使用Redis存储计数器，支持分布式部署。",
+  "language": "python",
+  "framework": "fastapi",
+  "expected_issues": [
+    "ip_spoofing_via_x_forwarded_for",
+    "sliding_window_off_by_one",
+    "redis_race_condition_check_then_increment",
+    "no_redis_fallback",
+    "blocking_redis_calls",
+    "key_expiry_not_set",
+    "no_rate_limit_headers_in_response",
+    "memory_leak_without_key_cleanup",
+    "thundering_herd_at_window_boundary"
+  ],
+  "test_cases": [
+    {
+      "input": "Send 10 requests within 1 minute (limit=10/min)",
+      "expected": "All 10 return 200 OK"
+    },
+    {
+      "input": "Send 11th request within same minute",
+      "expected": "429 Too Many Requests with Retry-After header"
+    },
+    {
+      "input": "Send request with X-Forwarded-For: 1.2.3.4 header spoofing",
+      "expected": "Uses trusted proxy list, not raw X-Forwarded-For"
+    },
+    {
+      "input": "Send requests from 2 different user IDs on same IP",
+      "expected": "Each user has independent rate limit counter"
+    },
+    {
+      "input": "Redis connection drops during rate check",
+      "expected": "Graceful degradation: allow request with warning log"
+    }
+  ],
+  "difficulty": "hard",
+  "primary_attacker": "security_and_performance",
+  "notes": "Tests security attacker (IP spoofing, race conditions) and performance attacker (blocking I/O, memory leaks)"
+}

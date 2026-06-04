@@ -1,0 +1,34 @@
+{
+  "task_id": "task_003",
+  "description": "实现一个数据库连接池管理器，支持以下功能：1) 连接复用，最小/最大连接数可配置；2) 连接健康检查（定期ping）；3) 空闲连接超时自动回收；4) 获取连接时支持超时等待；5) 连接使用完毕后自动归还。使用 asyncio 实现。",
+  "language": "python",
+  "expected_issues": [
+    "connection_leak_on_exception",
+    "health_check_blocks_pool",
+    "no_connection_reset_on_return",
+    "thundering_herd_on_pool_exhaustion",
+    "no_max_lifetime_for_connections",
+    "race_condition_on_pool_resize"
+  ],
+  "test_cases": [
+    {
+      "input": "pool = ConnectionPool(min_size=2, max_size=10); conn = await pool.acquire()",
+      "expected": "Returns a valid connection object; pool size >= 2"
+    },
+    {
+      "input": "Acquire max_size+1 connections concurrently with timeout=1s",
+      "expected": "Last acquire raises TimeoutError after 1 second"
+    },
+    {
+      "input": "conn = await pool.acquire(); raise Exception(); # without release",
+      "expected": "Connection is returned to pool via context manager __aexit__"
+    },
+    {
+      "input": "Create pool, wait idle_timeout+1 seconds, check pool size",
+      "expected": "Idle connections above min_size are closed"
+    }
+  ],
+  "difficulty": "hard",
+  "primary_attacker": "performance",
+  "notes": "Tests performance attacker's ability to find resource management issues"
+}

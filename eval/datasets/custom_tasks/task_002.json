@@ -1,0 +1,39 @@
+{
+  "task_id": "task_002",
+  "description": "实现一个通用排序函数，支持多种排序算法（快排、归并、堆排序），接收数组和算法名称参数。要求：1) 支持自定义比较函数；2) 保证稳定排序（归并）和不稳定排序（快排、堆排）行为正确；3) 处理边界情况（空数组、单元素、重复元素、已排序数组）。",
+  "language": "python",
+  "expected_issues": [
+    "stack_overflow_on_sorted_input",
+    "incorrect_pivot_selection",
+    "unstable_sort_marked_as_stable",
+    "no_handling_of_empty_array",
+    "no_handling_of_none_values",
+    "integer_overflow_in_merge",
+    "worst_case_quicksort_on_sorted_input"
+  ],
+  "test_cases": [
+    {
+      "input": "sort([], algorithm='quicksort')",
+      "expected": "[] (empty array returns empty)"
+    },
+    {
+      "input": "sort([1], algorithm='mergesort')",
+      "expected": "[1] (single element unchanged)"
+    },
+    {
+      "input": "sort([3, 1, 4, 1, 5, 9, 2, 6], algorithm='quicksort')",
+      "expected": "[1, 1, 2, 3, 4, 5, 6, 9]"
+    },
+    {
+      "input": "sort(list(range(10000, 0, -1)), algorithm='quicksort')",
+      "expected": "sorted list without RecursionError (test worst-case pivot)"
+    },
+    {
+      "input": "sort([(1,'b'), (1,'a'), (2,'c')], key=lambda x: x[0], algorithm='mergesort')",
+      "expected": "[(1,'b'), (1,'a'), (2,'c')] (stable: equal elements keep original order)"
+    }
+  ],
+  "difficulty": "medium",
+  "primary_attacker": "correctness",
+  "notes": "Tests correctness attacker's ability to find algorithmic edge cases"
+}
