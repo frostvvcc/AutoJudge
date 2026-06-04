@@ -106,6 +106,7 @@ export default function App() {
                 messages={debate.messages}
                 currentRound={debate.currentRound}
                 status={debate.status}
+                streamingAgents={debate.streamingAgents}
               />
             </div>
 

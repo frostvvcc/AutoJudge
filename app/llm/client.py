@@ -261,6 +261,59 @@ def _extract_json_from_text(text: str) -> dict | None:
     return None
 
 
+def _extract_streaming_message(accumulated_json: str) -> str:
+    """Extract partial message text from streaming tool input JSON."""
+    marker = '"message"'
+    idx = accumulated_json.find(marker)
+    if idx == -1:
+        return ""
+
+    colon_idx = accumulated_json.find(':', idx + len(marker))
+    if colon_idx == -1:
+        return ""
+
+    quote_idx = accumulated_json.find('"', colon_idx + 1)
+    if quote_idx == -1:
+        return ""
+
+    result = []
+    i = quote_idx + 1
+    while i < len(accumulated_json):
+        c = accumulated_json[i]
+        if c == '\\' and i + 1 < len(accumulated_json):
+            next_c = accumulated_json[i + 1]
+            if next_c == 'n':
+                result.append('\n')
+            elif next_c == 't':
+                result.append('\t')
+            elif next_c == '"':
+                result.append('"')
+            elif next_c == '\\':
+                result.append('\\')
+            elif next_c == '/':
+                result.append('/')
+            elif next_c == 'u' and i + 5 < len(accumulated_json):
+                hex_str = accumulated_json[i + 2:i + 6]
+                try:
+                    result.append(chr(int(hex_str, 16)))
+                    i += 6
+                    continue
+                except ValueError:
+                    result.append('\\')
+                    result.append(next_c)
+            else:
+                result.append('\\')
+                result.append(next_c)
+            i += 2
+        elif c == '"':
+            break
+        else:
+            result.append(c)
+            i += 1
+
+    return ''.join(result)
+
+
 async def _call_claude_cli(
     agent: str,
     system_prompt: str,
@@ -322,6 +375,96 @@ async def _call_claude_cli(
         logger.warning("json_parse_failed agent=%s raw_length=%d", agent, len(raw_output))
 
     # Estimate token count from character length (~1.5 chars/token for mixed CJK+English)
+    estimated_tokens = len(prompt + raw_output) // 2
+
+    return AgentResponse(
+        agent=agent,
+        content=content,
+        code=code,
+        structured=structured,
+        tokens_used=estimated_tokens,
+        latency_ms=elapsed_ms,
+    )
+
+
+async def _call_claude_cli_streaming(
+    agent: str,
+    system_prompt: str,
+    messages: list[dict],
+    on_token: callable,
+    max_tokens: int = 4000,
+) -> AgentResponse:
+    """Streaming variant: read stdout incrementally, forward tokens via callback."""
+    prompt = _build_structured_prompt(system_prompt, messages, agent)
+
+    cmd = [settings.claude_cli_path, "-p", "--output-format", "text"]
+    if settings.claude_cli_model:
+        cmd.extend(["--model", settings.claude_cli_model])
+    cmd.extend(["--max-turns", "1"])
+
+    start = time.monotonic()
+
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        stdin=asyncio.subprocess.PIPE,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+
+    proc.stdin.write(prompt.encode("utf-8"))
+    await proc.stdin.drain()
+    proc.stdin.close()
+
+    accumulated = ""
+    sent_msg_len = 0
+
+    try:
+        while True:
+            chunk = await asyncio.wait_for(
+                proc.stdout.read(512),
+                timeout=settings.claude_cli_timeout,
+            )
+            if not chunk:
+                break
+            text = chunk.decode("utf-8", errors="replace")
+            accumulated += text
+
+            msg_text = _extract_streaming_message(accumulated)
+            if len(msg_text) > sent_msg_len:
+                new_text = msg_text[sent_msg_len:]
+                sent_msg_len = len(msg_text)
+                await on_token(new_text)
+    except asyncio.TimeoutError:
+        proc.kill()
+        raise TimeoutError(
+            f"claude -p timed out after {settings.claude_cli_timeout}s for agent {agent}"
+        )
+
+    await proc.wait()
+    elapsed_ms = int((time.monotonic() - start) * 1000)
+
+    if proc.returncode != 0:
+        stderr_data = await proc.stderr.read()
+        err_msg = stderr_data.decode("utf-8", errors="replace").strip()
+        raise RuntimeError(f"claude -p failed (exit {proc.returncode}): {err_msg[:500]}")
+
+    raw_output = accumulated.strip()
+    if not raw_output:
+        raise RuntimeError(f"claude -p returned empty output for agent {agent}")
+
+    structured = _extract_json_from_text(raw_output)
+    content = ""
+    code = None
+
+    if structured:
+        content = structured.get("message", raw_output)
+        code = structured.get("updated_code")
+        if structured.get("test_code"):
+            content = structured["test_code"]
+    else:
+        content = raw_output
+        logger.warning("json_parse_failed agent=%s raw_length=%d", agent, len(raw_output))
+
     estimated_tokens = len(prompt + raw_output) // 2
 
     return AgentResponse(
@@ -539,6 +682,115 @@ async def _call_anthropic_api(
     return result
 
 
+async def _call_anthropic_api_streaming(
+    agent: str,
+    system_prompt: str,
+    messages: list[dict],
+    on_token: callable,
+    model: str | None = None,
+    max_tokens: int = 4000,
+) -> AgentResponse:
+    """Streaming variant: use messages.stream(), forward tokens via callback."""
+    from app.llm.model_router import get_model_for_agent
+
+    client = _get_anthropic_client()
+    tools, tool_choice = _get_tools_for_agent(agent)
+    resolved_model = model or get_model_for_agent(agent)
+
+    system_blocks = [
+        {"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}
+    ]
+
+    cached_tools = list(tools)
+    if cached_tools:
+        cached_tools[-1] = {**cached_tools[-1], "cache_control": {"type": "ephemeral"}}
+
+    conv_messages = list(messages)
+    total_tokens = 0
+    total_cache_read = 0
+    total_cache_creation = 0
+
+    start = time.monotonic()
+    max_tool_turns = 3
+    response = None
+
+    for turn in range(max_tool_turns + 1):
+        tc = tool_choice if turn == 0 and agent != "coder" else (
+            {"type": "any"} if agent == "coder" else tool_choice
+        )
+
+        accumulated_json = ""
+        sent_msg_len = 0
+
+        async with client.messages.stream(
+            model=resolved_model,
+            system=system_blocks,
+            messages=conv_messages,
+            tools=cached_tools,
+            tool_choice=tc,
+            max_tokens=max_tokens,
+        ) as stream:
+            async for event in stream:
+                if not hasattr(event, 'type'):
+                    continue
+                if event.type == 'content_block_start':
+                    if hasattr(event, 'content_block') and event.content_block.type == 'tool_use':
+                        accumulated_json = ""
+                        sent_msg_len = 0
+                elif event.type == 'content_block_delta':
+                    if event.delta.type == 'text_delta':
+                        await on_token(event.delta.text)
+                    elif event.delta.type == 'input_json_delta':
+                        accumulated_json += event.delta.partial_json
+                        msg_text = _extract_streaming_message(accumulated_json)
+                        if len(msg_text) > sent_msg_len:
+                            new_text = msg_text[sent_msg_len:]
+                            sent_msg_len = len(msg_text)
+                            await on_token(new_text)
+
+            response = await stream.get_final_message()
+
+        total_tokens += response.usage.input_tokens + response.usage.output_tokens
+        total_cache_read += getattr(response.usage, "cache_read_input_tokens", 0) or 0
+        total_cache_creation += getattr(response.usage, "cache_creation_input_tokens", 0) or 0
+
+        if agent != "coder" or response.stop_reason != "tool_use":
+            break
+
+        pending_tool_calls = []
+        has_submit = False
+        for block in response.content:
+            if block.type == "tool_use":
+                if block.name == "submit_response":
+                    has_submit = True
+                else:
+                    pending_tool_calls.append(block)
+
+        if has_submit or not pending_tool_calls:
+            break
+
+        conv_messages.append({"role": "assistant", "content": response.content})
+        tool_results = []
+        for tc_block in pending_tool_calls:
+            result_text = await _execute_coder_tool(tc_block.name, tc_block.input)
+            tool_results.append({
+                "type": "tool_result",
+                "tool_use_id": tc_block.id,
+                "content": result_text,
+            })
+            logger.info("coder_tool_executed tool=%s turn=%d", tc_block.name, turn)
+        conv_messages.append({"role": "user", "content": tool_results})
+
+    elapsed_ms = int((time.monotonic() - start) * 1000)
+
+    result = _parse_api_response(response, agent)
+    result.tokens_used = total_tokens
+    result.cache_read = total_cache_read
+    result.cache_creation = total_cache_creation
+    result.latency_ms = elapsed_ms
+    return result
+
+
 # ─── Unified entry point ─────────────────────────────────────────────────────
 
 def _is_retryable(exc: BaseException) -> bool:
@@ -568,20 +820,21 @@ async def call_agent(
     tool_choice: dict | None = None,
     model: str | None = None,
     max_tokens: int = 4000,
+    on_token: callable = None,
 ) -> AgentResponse:
     """
     Unified agent call — routes to claude -p or Anthropic API based on config.
-
-    When using claude -p:
-      - tools/tool_choice params are ignored (structured output via JSON prompt)
-      - model param is ignored (uses claude CLI's configured model)
-      - No API key needed
-
-    When using anthropic_api:
-      - Full tool_use support with forced structured output
-      - Requires ANTHROPIC_API_KEY
+    When on_token is provided, uses streaming mode and forwards text chunks.
     """
     if settings.llm_backend == "claude_cli":
+        if on_token:
+            return await _call_claude_cli_streaming(
+                agent=agent,
+                system_prompt=system_prompt,
+                messages=messages,
+                on_token=on_token,
+                max_tokens=max_tokens,
+            )
         return await _call_claude_cli(
             agent=agent,
             system_prompt=system_prompt,
@@ -589,6 +842,15 @@ async def call_agent(
             max_tokens=max_tokens,
         )
     else:
+        if on_token:
+            return await _call_anthropic_api_streaming(
+                agent=agent,
+                system_prompt=system_prompt,
+                messages=messages,
+                on_token=on_token,
+                model=model,
+                max_tokens=max_tokens,
+            )
         return await _call_anthropic_api(
             agent=agent,
             system_prompt=system_prompt,

@@ -56,6 +56,12 @@ export interface WSEvent {
   reason?: string;
   data?: DebateResult;
   message?: string;
+  token?: string;
+}
+
+export interface StreamingAgent {
+  content: string;
+  round: number;
 }
 
 export type DebateStatus = 'idle' | 'connecting' | 'running' | 'converged' | 'done' | 'error';

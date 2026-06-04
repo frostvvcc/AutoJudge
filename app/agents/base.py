@@ -38,6 +38,7 @@ class BaseAgent(ABC):
         prompt: str,
         budget: BudgetManager,
         model: str | None = None,
+        on_token: callable = None,
     ) -> AgentResponse:
         from app.llm.client import call_agent
 
@@ -59,6 +60,7 @@ class BaseAgent(ABC):
             tool_choice=self.get_tool_choice(),
             model=model,
             max_tokens=max_tokens,
+            on_token=on_token,
         )
 
         budget.record(self.name, response.tokens_used)

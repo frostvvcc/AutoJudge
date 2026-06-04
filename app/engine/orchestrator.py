@@ -307,11 +307,20 @@ class DebateOrchestrator:
                     )
 
         await self._notify(on_progress, {
-            "type": "agent_start", "agent": "coder"
+            "type": "agent_start", "agent": "coder", "round": context.round
         })
 
+        async def coder_token_handler(token: str):
+            await self._notify(on_progress, {
+                "type": "agent_token", "agent": "coder",
+                "token": token, "round": context.round,
+            })
+
         coder_start = time.monotonic()
-        coder_response = await self.coder.speak(context, coder_prompt, budget)
+        coder_response = await self.coder.speak(
+            context, coder_prompt, budget,
+            on_token=coder_token_handler if on_progress else None,
+        )
         record_agent_call(
             "coder", coder_response.tokens_used,
             time.monotonic() - coder_start,
@@ -353,11 +362,21 @@ class DebateOrchestrator:
         async def safe_call_attacker(name: str):
             try:
                 await self._notify(on_progress, {
-                    "type": "agent_start", "agent": name
+                    "type": "agent_start", "agent": name, "round": context.round
                 })
+
+                async def attacker_token_handler(token: str):
+                    await self._notify(on_progress, {
+                        "type": "agent_token", "agent": name,
+                        "token": token, "round": context.round,
+                    })
+
                 agent = ATTACKER_REGISTRY[name]
                 a_start = time.monotonic()
-                resp = await agent.speak(context, attacker_prompt, budget)
+                resp = await agent.speak(
+                    context, attacker_prompt, budget,
+                    on_token=attacker_token_handler if on_progress else None,
+                )
                 record_agent_call(name, resp.tokens_used, time.monotonic() - a_start)
                 return resp
             except Exception as e:
