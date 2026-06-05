@@ -43,9 +43,6 @@ PyJWT>=2.8.0
 passlib[bcrypt]>=1.7.4
 bcrypt>=4.1.0
 
-# Security (credential encryption)
-cryptography>=42.0.0
-
 # Task Queue
 arq>=0.26.0
 

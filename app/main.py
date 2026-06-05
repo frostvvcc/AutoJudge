@@ -12,7 +12,7 @@ from app.api.routes.generate import router as generate_router
 from app.api.routes.health import router as health_router
 from app.api.routes.history import router as history_router
 from app.config import settings
-from app.db.engine import engine, async_session
+from app.db.engine import engine
 from app.db.models import Base
 from app.db.redis import init_redis, close_redis
 from app.api.middleware.auth import AuthMiddleware
@@ -45,10 +45,6 @@ async def lifespan(app: FastAPI):
 
     redis_client = await init_redis()
     _auth_middleware = AuthMiddleware(redis_client=redis_client)
-
-    from app.llm.key_pool import init_pool
-    async with async_session() as db:
-        await init_pool(db)
 
     from app.scheduler.jobs import scheduler
     scheduler.start()

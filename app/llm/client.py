@@ -621,19 +621,6 @@ def _is_retryable(exc: BaseException) -> bool:
     return False
 
 
-def _is_rate_limit(exc: BaseException) -> bool:
-    err_str = str(exc).lower()
-    if "429" in err_str or "rate" in err_str:
-        return True
-    try:
-        import anthropic
-        if isinstance(exc, anthropic.RateLimitError):
-            return True
-    except ImportError:
-        pass
-    return False
-
-
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=2, max=30),
@@ -647,56 +634,25 @@ async def call_agent(
     tool_choice: dict | None = None,
     model: str | None = None,
     max_tokens: int = 4000,
-    session_id: str | None = None,
 ) -> AgentResponse:
-    """
-    Unified agent call — acquires a key from the pool, routes to the
-    appropriate backend, and releases/cools down the key afterward.
-    """
-    from app.llm.key_pool import get_pool, PoolExhausted
-
-    pool = get_pool()
-    member = None
-
-    if pool.members:
-        try:
-            member = await pool.acquire(session_id=session_id)
-        except PoolExhausted:
-            logger.warning("key_pool_exhausted, falling back to env config")
-
-    if member:
-        try:
-            if member.backend == "anthropic_proxy":
-                response = await _call_anthropic_proxy(
-                    agent=agent, system_prompt=system_prompt, messages=messages,
-                    model=model, max_tokens=max_tokens, tools=tools,
-                    tool_choice=tool_choice,
-                    api_key=member.decrypted_key, base_url=member.base_url,
-                )
-            else:
-                response = await _call_anthropic_api(
-                    agent=agent, system_prompt=system_prompt, messages=messages,
-                    model=model, max_tokens=max_tokens, tools=tools,
-                    tool_choice=tool_choice,
-                    api_key=member.decrypted_key,
-                )
-            await pool.release(member, response.tokens_used)
-            return response
-        except Exception as exc:
-            if _is_rate_limit(exc):
-                await pool.handle_rate_limit(member)
-                logger.warning("key_rate_limited name=%s, retrying with next key", member.name)
-            raise
+    """Unified agent call — routes to proxy or direct API based on config."""
+    if settings.llm_backend == "anthropic_proxy":
+        return await _call_anthropic_proxy(
+            agent=agent,
+            system_prompt=system_prompt,
+            messages=messages,
+            model=model,
+            max_tokens=max_tokens,
+            tools=tools,
+            tool_choice=tool_choice,
+        )
     else:
-        if settings.llm_backend == "anthropic_proxy":
-            return await _call_anthropic_proxy(
-                agent=agent, system_prompt=system_prompt, messages=messages,
-                model=model, max_tokens=max_tokens, tools=tools,
-                tool_choice=tool_choice,
-            )
-        else:
-            return await _call_anthropic_api(
-                agent=agent, system_prompt=system_prompt, messages=messages,
-                model=model, max_tokens=max_tokens, tools=tools,
-                tool_choice=tool_choice,
-            )
+        return await _call_anthropic_api(
+            agent=agent,
+            system_prompt=system_prompt,
+            messages=messages,
+            model=model,
+            max_tokens=max_tokens,
+            tools=tools,
+            tool_choice=tool_choice,
+        )

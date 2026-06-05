@@ -5,8 +5,6 @@ from pydantic import Field
 class Settings(BaseSettings):
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
-    master_encryption_key: str = Field(default="", alias="MASTER_ENCRYPTION_KEY")
-
     llm_backend: str = Field(default="anthropic_proxy", alias="LLM_BACKEND")
 
     anthropic_api_key: str = Field(default="", alias="ANTHROPIC_API_KEY")

@@ -1,15 +1,10 @@
 """
 Scheduler — modeled after AutoResearch's 8-job Cron scheduler.
 
-AutoResearch jobs adapted for AutoJudge:
-  Job 1 (Heartbeat)      → not needed (single instance)
-  Job 2 (Quota recovery)  → recover_cooldown_keys
-  Job 3 (Preparing TTL)   → cleanup_stale_tasks
-  Job 4 (Partition maint.) → not needed (no partitioning)
-  Job 5 (Doc backup)      → not needed (no S3)
-  Job 6 (Token cleanup)   → handled by key_pool auto-recovery
-  Job 7 (Orphan sessions) → cleanup_orphan_sessions
-  Job 8 (Metrics agg.)    → aggregate_metrics
+Adapted for AutoJudge:
+  Job 1: cleanup_stale_tasks   (from AutoResearch Job 3: Preparing TTL)
+  Job 2: aggregate_metrics     (from AutoResearch Job 8)
+  Job 3: cleanup_orphan_sessions (from AutoResearch Job 7)
 """
 
 from __future__ import annotations
@@ -22,14 +17,6 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 logger = logging.getLogger(__name__)
 
 scheduler = AsyncIOScheduler()
-
-
-@scheduler.scheduled_job("interval", minutes=5, id="recover_cooldown_keys")
-async def recover_cooldown_keys():
-    from app.llm.key_pool import get_pool
-
-    pool = get_pool()
-    pool.recover_cooldowns()
 
 
 @scheduler.scheduled_job("interval", minutes=10, id="cleanup_stale_tasks")
@@ -60,16 +47,24 @@ async def cleanup_stale_tasks():
 
 @scheduler.scheduled_job("interval", hours=1, id="aggregate_metrics")
 async def aggregate_metrics():
-    from app.llm.key_pool import get_pool
+    from app.db.engine import async_session
+    from app.db.models import DebateSession
+    from sqlalchemy import func, select
 
-    pool = get_pool()
-    status = pool.get_pool_status()
-    total_tokens = sum(m["total_tokens"] for m in status)
-    total_requests = sum(m["total_requests"] for m in status)
-    logger.info(
-        "metrics_aggregate keys=%d total_tokens=%d total_requests=%d",
-        len(status), total_tokens, total_requests,
-    )
+    try:
+        async with async_session() as db:
+            row = (await db.execute(
+                select(
+                    func.count(DebateSession.id),
+                    func.sum(DebateSession.total_tokens),
+                ).where(DebateSession.status == "completed")
+            )).one()
+            logger.info(
+                "metrics_aggregate completed_sessions=%s total_tokens=%s",
+                row[0], row[1],
+            )
+    except Exception as e:
+        logger.warning("aggregate_metrics_failed error=%s", e)
 
 
 @scheduler.scheduled_job("cron", hour=3, id="cleanup_orphan_sessions")
