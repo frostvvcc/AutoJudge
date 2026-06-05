@@ -508,7 +508,14 @@ async def _call_anthropic_proxy(
             if effective_choice:
                 body["tool_choice"] = effective_choice
 
-            data = await _stream_anthropic_sse(http, url, headers, body)
+            use_streaming = is_thinking_model
+            if use_streaming:
+                data = await _stream_anthropic_sse(http, url, headers, body)
+            else:
+                resp = await http.post(url, headers=headers, json=body)
+                if resp.status_code != 200:
+                    raise RuntimeError(f"Proxy API error {resp.status_code}: {resp.text[:300]}")
+                data = resp.json()
 
             usage = data.get("usage", {})
             total_tokens += usage.get("input_tokens", 0) + usage.get("output_tokens", 0)
