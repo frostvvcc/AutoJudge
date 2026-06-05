@@ -30,9 +30,10 @@ export default function UserInteractionDock({
   const [showRejectInput, setShowRejectInput] = useState(false);
   const [prevPhase, setPrevPhase] = useState(phase);
   const [isTransitioning, setIsTransitioning] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const rejectRef = useRef<HTMLTextAreaElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const rejectInputRef = useRef<HTMLInputElement>(null);
 
+  // Phase transition animation
   useEffect(() => {
     if (phase !== prevPhase) {
       setIsTransitioning(true);
@@ -47,9 +48,10 @@ export default function UserInteractionDock({
     }
   }, [phase, prevPhase]);
 
+  // Auto-focus reject input when shown
   useEffect(() => {
     if (showRejectInput) {
-      rejectRef.current?.focus();
+      rejectInputRef.current?.focus();
     }
   }, [showRejectInput]);
 
@@ -58,9 +60,6 @@ export default function UserInteractionDock({
     if (!trimmed) return;
     onPlanChat(trimmed);
     setChatInput('');
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-    }
   };
 
   const handleRejectSubmit = () => {
@@ -71,17 +70,22 @@ export default function UserInteractionDock({
     setShowRejectInput(false);
   };
 
-  const handleTextareaKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>, onSubmit: () => void) => {
+  const handleChatKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      onSubmit();
+      handleChatSubmit();
     }
   };
 
-  const handleAutoResize = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    const el = e.target;
-    el.style.height = 'auto';
-    el.style.height = Math.min(el.scrollHeight, 120) + 'px';
+  const handleRejectKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleRejectSubmit();
+    }
+    if (e.key === 'Escape') {
+      setShowRejectInput(false);
+      setRejectInput('');
+    }
   };
 
   const activePhase = isTransitioning ? prevPhase : phase;
@@ -90,179 +94,176 @@ export default function UserInteractionDock({
   if (!validPhase) return null;
 
   return (
-    <div className="border-t border-gray-800/50 bg-gray-950/80 backdrop-blur-md">
+    <div className="fixed bottom-0 left-0 right-0 z-50">
+      {/* Top edge gradient */}
+      <div className="h-px bg-gradient-to-r from-transparent via-gray-700 to-transparent" />
+
       <div
-        className={`max-w-3xl mx-auto px-4 py-3 transition-opacity duration-150 ${
+        className={`bg-gray-900/95 backdrop-blur-sm border-t border-gray-800 px-6 py-3 transition-opacity duration-150 ${
           isTransitioning ? 'opacity-0' : 'opacity-100'
         }`}
       >
-        {/* Phase indicator */}
-        <div className="flex items-center gap-2 mb-2.5">
-          <div className={`w-2 h-2 rounded-full ${
-            validPhase === 'done' ? 'bg-green-500' : 'bg-blue-500 animate-pulse'
-          }`} />
-          <span className="text-xs text-gray-500 font-medium">
-            {validPhase === 'plan' && '方案选择阶段'}
-            {validPhase === 'debate' && '辩论进行中'}
-            {validPhase === 'arbitration' && '等待裁决确认'}
-            {validPhase === 'fixing' && '修复策略确认'}
-            {validPhase === 'done' && '任务已完成'}
-          </span>
-        </div>
+        <div className="max-w-5xl mx-auto">
+          {/* Phase indicator */}
+          <div className="flex items-center gap-2 mb-2">
+            <div className={`w-1.5 h-1.5 rounded-full ${
+              validPhase === 'done' ? 'bg-green-500' : 'bg-blue-500 animate-pulse'
+            }`} />
+            <span className="text-xs text-gray-500">
+              {validPhase === 'plan' && '方案选择阶段'}
+              {validPhase === 'debate' && '辩论进行中'}
+              {validPhase === 'arbitration' && '等待裁决确认'}
+              {validPhase === 'fixing' && '修复策略确认'}
+              {validPhase === 'done' && '任务已完成'}
+            </span>
+          </div>
 
-        {/* Plan phase: buttons + chat input */}
-        {validPhase === 'plan' && (
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
+          {/* Phase-specific content */}
+          <div className="flex items-center gap-3">
+            {validPhase === 'plan' && (
+              <>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => onPlanSelect('A')}
+                    className="px-4 py-2 text-xs font-medium text-blue-400 bg-blue-900/20 border border-blue-700/40 rounded-lg hover:bg-blue-900/40 transition-colors"
+                  >
+                    选择方案A
+                  </button>
+                  <button
+                    onClick={() => onPlanSelect('B')}
+                    className="px-4 py-2 text-xs font-medium text-blue-400 bg-blue-900/20 border border-blue-700/40 rounded-lg hover:bg-blue-900/40 transition-colors"
+                  >
+                    选择方案B
+                  </button>
+                  <button
+                    onClick={() => onPlanSelect('auto')}
+                    className="px-4 py-2 text-xs font-medium text-gray-400 bg-gray-800 border border-gray-700/50 rounded-lg hover:text-gray-200 transition-colors"
+                  >
+                    交给Coder选择
+                  </button>
+                </div>
+                <div className="h-5 w-px bg-gray-700" />
+                <div className="flex-1 flex items-center gap-2">
+                  <input
+                    ref={inputRef}
+                    type="text"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    onKeyDown={handleChatKeyDown}
+                    placeholder="和 Coder 聊聊你的想法..."
+                    className="flex-1 bg-gray-800/60 border border-gray-700/50 rounded-lg px-3 py-2 text-xs text-gray-300 placeholder-gray-600 focus:outline-none focus:border-blue-600/50 transition-colors"
+                  />
+                  <button
+                    onClick={handleChatSubmit}
+                    disabled={!chatInput.trim()}
+                    className={`px-3 py-2 rounded-lg text-xs transition-colors ${
+                      chatInput.trim()
+                        ? 'bg-blue-600/30 text-blue-400 border border-blue-600/40 hover:bg-blue-600/50'
+                        : 'bg-gray-800 text-gray-600 border border-gray-700/30 cursor-not-allowed'
+                    }`}
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+                    </svg>
+                  </button>
+                </div>
+              </>
+            )}
+
+            {validPhase === 'debate' && (
               <button
-                onClick={() => onPlanSelect('A')}
-                className="px-4 py-2 text-sm font-medium text-blue-300 bg-blue-500/10 border border-blue-500/20 rounded-xl hover:bg-blue-500/20 transition-colors"
+                onClick={onStop}
+                className="px-4 py-2 text-xs font-medium text-red-400 bg-red-900/20 border border-red-700/40 rounded-lg hover:bg-red-900/40 transition-colors flex items-center gap-2"
               >
-                方案 A
-              </button>
-              <button
-                onClick={() => onPlanSelect('B')}
-                className="px-4 py-2 text-sm font-medium text-blue-300 bg-blue-500/10 border border-blue-500/20 rounded-xl hover:bg-blue-500/20 transition-colors"
-              >
-                方案 B
-              </button>
-              <button
-                onClick={() => onPlanSelect('auto')}
-                className="px-4 py-2 text-sm text-gray-400 bg-gray-800/60 border border-gray-700/30 rounded-xl hover:bg-gray-800 hover:text-gray-200 transition-colors"
-              >
-                交给 Coder 选择
-              </button>
-            </div>
-            <div className="relative">
-              <textarea
-                ref={textareaRef}
-                value={chatInput}
-                onChange={(e) => { setChatInput(e.target.value); handleAutoResize(e); }}
-                onKeyDown={(e) => handleTextareaKeyDown(e, handleChatSubmit)}
-                placeholder="和 Coder 聊聊你的想法..."
-                rows={1}
-                className="w-full bg-gray-800/60 border border-gray-700/40 rounded-2xl px-4 py-3 pr-12 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-blue-500/50 focus:ring-1 focus:ring-blue-500/20 transition-all resize-none"
-              />
-              <button
-                onClick={handleChatSubmit}
-                disabled={!chatInput.trim()}
-                className={`absolute right-2 bottom-2 w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
-                  chatInput.trim()
-                    ? 'bg-blue-500 text-white hover:bg-blue-400 shadow-lg shadow-blue-500/20'
-                    : 'bg-gray-700 text-gray-500 cursor-not-allowed'
-                }`}
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 10.5L12 3m0 0l7.5 7.5M12 3v18" />
+                <svg className="w-3.5 h-3.5" fill="currentColor" viewBox="0 0 24 24">
+                  <rect x="6" y="6" width="12" height="12" rx="1" />
                 </svg>
+                终止辩论
               </button>
-            </div>
-          </div>
-        )}
+            )}
 
-        {/* Debate phase: stop button */}
-        {validPhase === 'debate' && (
-          <div className="flex items-center justify-center">
-            <button
-              onClick={onStop}
-              className="px-5 py-2.5 text-sm font-medium text-red-300 bg-red-500/10 border border-red-500/20 rounded-xl hover:bg-red-500/20 transition-colors flex items-center gap-2"
-            >
-              <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24">
-                <rect x="6" y="6" width="12" height="12" rx="2" />
-              </svg>
-              终止辩论
-            </button>
-          </div>
-        )}
-
-        {/* Arbitration phase */}
-        {validPhase === 'arbitration' && (
-          <div className="flex items-center justify-center gap-3">
-            <button
-              onClick={onArbitrationAccept}
-              className="px-5 py-2.5 text-sm font-medium text-green-300 bg-green-500/10 border border-green-500/20 rounded-xl hover:bg-green-500/20 transition-colors"
-            >
-              接受裁决
-            </button>
-            <button
-              onClick={onStop}
-              className="px-5 py-2.5 text-sm font-medium text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-xl hover:bg-amber-500/20 transition-colors"
-            >
-              我有异议
-            </button>
-          </div>
-        )}
-
-        {/* Fixing phase */}
-        {validPhase === 'fixing' && (
-          <div className="space-y-3">
-            <div className="flex items-center justify-center gap-3">
-              <button
-                onClick={onStrategyAccept}
-                className="px-5 py-2.5 text-sm font-medium text-green-300 bg-green-500/10 border border-green-500/20 rounded-xl hover:bg-green-500/20 transition-colors"
-              >
-                同意替代方案
-              </button>
-              <button
-                onClick={() => setShowRejectInput(!showRejectInput)}
-                className={`px-5 py-2.5 text-sm font-medium rounded-xl transition-colors ${
-                  showRejectInput
-                    ? 'text-amber-300 bg-amber-500/20 border border-amber-500/30'
-                    : 'text-amber-300 bg-amber-500/10 border border-amber-500/20 hover:bg-amber-500/20'
-                }`}
-              >
-                不同意，我来说
-              </button>
-            </div>
-            {showRejectInput && (
-              <div className="relative">
-                <textarea
-                  ref={rejectRef}
-                  value={rejectInput}
-                  onChange={(e) => { setRejectInput(e.target.value); handleAutoResize(e); }}
-                  onKeyDown={(e) => {
-                    handleTextareaKeyDown(e, handleRejectSubmit);
-                    if (e.key === 'Escape') {
-                      setShowRejectInput(false);
-                      setRejectInput('');
-                    }
-                  }}
-                  placeholder="说说你的想法... (按 Esc 取消)"
-                  rows={1}
-                  className="w-full bg-gray-800/60 border border-amber-700/30 rounded-2xl px-4 py-3 pr-12 text-sm text-gray-200 placeholder-gray-500 focus:outline-none focus:border-amber-500/50 focus:ring-1 focus:ring-amber-500/20 transition-all resize-none"
-                />
+            {validPhase === 'arbitration' && (
+              <>
                 <button
-                  onClick={handleRejectSubmit}
-                  disabled={!rejectInput.trim()}
-                  className={`absolute right-2 bottom-2 w-8 h-8 rounded-lg flex items-center justify-center transition-all ${
-                    rejectInput.trim()
-                      ? 'bg-amber-500 text-white hover:bg-amber-400 shadow-lg shadow-amber-500/20'
-                      : 'bg-gray-700 text-gray-500 cursor-not-allowed'
-                  }`}
+                  onClick={onArbitrationAccept}
+                  className="px-4 py-2 text-xs font-medium text-green-400 bg-green-900/20 border border-green-700/40 rounded-lg hover:bg-green-900/40 transition-colors"
                 >
-                  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 10.5L12 3m0 0l7.5 7.5M12 3v18" />
-                  </svg>
+                  接受裁决
                 </button>
-              </div>
+                <button
+                  onClick={onStop}
+                  className="px-4 py-2 text-xs font-medium text-yellow-400 bg-yellow-900/20 border border-yellow-700/40 rounded-lg hover:bg-yellow-900/40 transition-colors"
+                >
+                  我有异议
+                </button>
+              </>
+            )}
+
+            {validPhase === 'fixing' && (
+              <>
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={onStrategyAccept}
+                    className="px-4 py-2 text-xs font-medium text-green-400 bg-green-900/20 border border-green-700/40 rounded-lg hover:bg-green-900/40 transition-colors"
+                  >
+                    同意替代方案
+                  </button>
+                  <button
+                    onClick={() => setShowRejectInput(!showRejectInput)}
+                    className={`px-4 py-2 text-xs font-medium rounded-lg transition-colors ${
+                      showRejectInput
+                        ? 'text-yellow-400 bg-yellow-900/30 border border-yellow-600/50'
+                        : 'text-yellow-400 bg-yellow-900/20 border border-yellow-700/40 hover:bg-yellow-900/40'
+                    }`}
+                  >
+                    不同意，我来说
+                  </button>
+                </div>
+                {showRejectInput && (
+                  <>
+                    <div className="h-5 w-px bg-gray-700" />
+                    <div className="flex-1 flex items-center gap-2">
+                      <input
+                        ref={rejectInputRef}
+                        type="text"
+                        value={rejectInput}
+                        onChange={(e) => setRejectInput(e.target.value)}
+                        onKeyDown={handleRejectKeyDown}
+                        placeholder="说说你的想法..."
+                        className="flex-1 bg-gray-800/60 border border-gray-700/50 rounded-lg px-3 py-2 text-xs text-gray-300 placeholder-gray-600 focus:outline-none focus:border-yellow-600/50 transition-colors"
+                      />
+                      <button
+                        onClick={handleRejectSubmit}
+                        disabled={!rejectInput.trim()}
+                        className={`px-3 py-2 rounded-lg text-xs transition-colors ${
+                          rejectInput.trim()
+                            ? 'bg-yellow-600/30 text-yellow-400 border border-yellow-600/40 hover:bg-yellow-600/50'
+                            : 'bg-gray-800 text-gray-600 border border-gray-700/30 cursor-not-allowed'
+                        }`}
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" />
+                        </svg>
+                      </button>
+                    </div>
+                  </>
+                )}
+              </>
+            )}
+
+            {validPhase === 'done' && (
+              <button
+                onClick={onStop}
+                className="px-4 py-2 text-xs font-medium text-blue-400 bg-blue-900/20 border border-blue-700/40 rounded-lg hover:bg-blue-900/40 transition-colors flex items-center gap-2"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+                新建任务
+              </button>
             )}
           </div>
-        )}
-
-        {/* Done phase */}
-        {validPhase === 'done' && (
-          <div className="flex items-center justify-center">
-            <button
-              onClick={onStop}
-              className="px-5 py-2.5 text-sm font-medium text-blue-300 bg-blue-500/10 border border-blue-500/20 rounded-xl hover:bg-blue-500/20 transition-colors flex items-center gap-2"
-            >
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-              </svg>
-              新建任务
-            </button>
-          </div>
-        )}
+        </div>
       </div>
     </div>
   );
