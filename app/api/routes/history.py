@@ -213,6 +213,7 @@ async def get_session_detail(
         summary_json=session.summary_json,
         risk_json=session.risk_json,
         metrics_json=session.metrics_json,
+        quality_report_json=session.quality_report_json,
         total_rounds=session.total_rounds,
         total_tokens=session.total_tokens,
         total_latency_ms=session.total_latency_ms,

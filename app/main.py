@@ -18,10 +18,7 @@ from app.db.redis import init_redis, close_redis
 from app.api.middleware.auth import AuthMiddleware
 from app.api.middleware.pipeline import (
     RequestIDMiddleware,
-    StructuredLogMiddleware,
-    SecurityHeadersMiddleware,
     ErrorHandlerMiddleware,
-    AuditLogMiddleware,
 )
 from app.mcp.client import close_code_analysis_client
 from app.tracing.tracer import setup_langsmith
@@ -64,12 +61,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Middleware pipeline — modeled after AutoResearch's 9-layer chain.
-# Order: outermost (first added) runs first on request, last on response.
-app.add_middleware(AuditLogMiddleware)
+# Middleware — keep minimal to avoid BaseHTTPMiddleware streaming bugs.
 app.add_middleware(ErrorHandlerMiddleware)
-app.add_middleware(SecurityHeadersMiddleware)
-app.add_middleware(StructuredLogMiddleware)
 app.add_middleware(RequestIDMiddleware)
 
 app.add_middleware(
