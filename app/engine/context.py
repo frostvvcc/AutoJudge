@@ -74,14 +74,61 @@ class DebateContext:
 
     def get_context_for_agent(self, agent: str) -> list[dict]:
         """
-        Build the message list for a specific agent.
-        Uses sliding window + early-round summaries to prevent context explosion.
+        Layer 2: Agent-Specific View — 每个 Agent 只看到跟自己相关的信息。
 
-        Key design: all other agents' messages in a round are merged into one
-        user message to satisfy Claude API's strict user/assistant alternation.
+        三层上下文架构：
+          Layer 1: Shared State (DebateState TypedDict) — 全局可读，不灌 prompt
+          Layer 2: Agent-Specific View — 本方法，按角色裁剪
+          Layer 3: Structured Summary Injection — cross_review_node 负责
+
+        裁剪规则：
+          攻击者 → 自己的历史 + Coder 对自己的回应（不看其他攻击者）
+          Coder  → 最新一轮所有攻击者的发言（不看旧版代码/方案讨论）
+          Judge  → 全局视图（需要总结整个辩论过程）
         """
-        messages = []
+        if agent in ("security", "performance", "correctness"):
+            return self._build_attacker_view(agent)
+        elif agent == "coder":
+            return self._build_coder_view()
+        elif agent in ("judge", "arbitrator"):
+            return self._build_judge_view()
+        else:
+            return self._build_default_view(agent)
 
+    def _build_attacker_view(self, agent: str) -> list[dict]:
+        """攻击者只看：自己之前的发言 + Coder 对自己的回应。"""
+        messages = []
+        recent_cutoff = max(0, self.round - 2)
+
+        if self.round > 2 and self.round_summaries:
+            own_summary = self._filter_summary_for(agent)
+            if own_summary:
+                messages.append(
+                    {"role": "user", "content": f"早期轮次摘要：\n{own_summary}"}
+                )
+                messages.append(
+                    {"role": "assistant", "content": "已了解历史背景，继续审查。"}
+                )
+
+        for msg in self.messages:
+            if msg.round < recent_cutoff:
+                continue
+
+            if msg.agent == agent:
+                messages.append({"role": "assistant", "content": msg.content})
+            elif msg.agent == "coder":
+                relevant = self._extract_coder_response_for(msg, agent)
+                if relevant:
+                    messages.append({"role": "user", "content": f"[CODER] {relevant}"})
+
+        if not messages or messages[-1]["role"] == "assistant":
+            messages.append({"role": "user", "content": "请开始/继续你的审查。"})
+
+        return messages
+
+    def _build_coder_view(self) -> list[dict]:
+        """Coder 只看：最新一轮攻击者的发言 + 自己之前的回应。"""
+        messages = []
         recent_cutoff = max(0, self.round - 2)
 
         if self.round > 2 and self.round_summaries:
@@ -92,40 +139,95 @@ class DebateContext:
                 {"role": "user", "content": f"早期轮次摘要：\n{summary}"}
             )
             messages.append(
-                {"role": "assistant", "content": "已了解历史对话背景，继续。"}
+                {"role": "assistant", "content": "已了解，继续。"}
+            )
+
+        for msg in self.messages:
+            if msg.round < recent_cutoff:
+                continue
+            if msg.agent == "coder":
+                messages.append({"role": "assistant", "content": msg.content})
+            elif msg.agent in ("security", "performance", "correctness"):
+                messages.append(
+                    {"role": "user", "content": f"[{msg.agent.upper()}] {msg.content}"}
+                )
+
+        if not messages or messages[-1]["role"] == "assistant":
+            messages.append({"role": "user", "content": "请回应攻击者的意见。"})
+
+        return messages
+
+    def _build_judge_view(self) -> list[dict]:
+        """Judge/Arbitrator 需要全局视图（总结整个辩论）。"""
+        messages = []
+        recent_cutoff = max(0, self.round - 2)
+
+        if self.round > 2 and self.round_summaries:
+            summary = "\n".join(
+                f"Round {r}: {s}" for r, s in self.round_summaries.items()
+            )
+            messages.append(
+                {"role": "user", "content": f"早期轮次摘要：\n{summary}"}
+            )
+            messages.append(
+                {"role": "assistant", "content": "已了解历史背景。"}
             )
 
         rounds: dict[int, list[DebateMessage]] = {}
         for msg in self.messages:
-            if msg.round > recent_cutoff:
+            if msg.round >= recent_cutoff:
                 rounds.setdefault(msg.round, []).append(msg)
 
         for round_num in sorted(rounds.keys()):
-            round_msgs = rounds[round_num]
-            my_msgs = [m for m in round_msgs if m.agent == agent]
-            other_msgs = [m for m in round_msgs if m.agent != agent]
-
-            if other_msgs:
-                combined = "\n\n".join(
-                    f"[{m.agent.upper()}] {m.content}" for m in other_msgs
-                )
-                messages.append({"role": "user", "content": combined})
-
-            if my_msgs:
-                combined = "\n\n".join(m.content for m in my_msgs)
-                messages.append({"role": "assistant", "content": combined})
-
-        if messages and messages[-1]["role"] == "assistant":
-            messages.append(
-                {"role": "user", "content": "请继续你的审查/回应。"}
+            combined = "\n\n".join(
+                f"[{m.agent.upper()}] {m.content}" for m in rounds[round_num]
             )
+            messages.append({"role": "user", "content": combined})
 
         if not messages:
-            messages.append(
-                {"role": "user", "content": "请开始你的工作。"}
-            )
+            messages.append({"role": "user", "content": "请开始评判。"})
 
         return messages
+
+    def _build_default_view(self, agent: str) -> list[dict]:
+        """兜底：planner/compressor 等轻量 Agent。"""
+        messages = []
+        for msg in self.messages:
+            if msg.agent == agent:
+                messages.append({"role": "assistant", "content": msg.content})
+            else:
+                messages.append(
+                    {"role": "user", "content": f"[{msg.agent.upper()}] {msg.content}"}
+                )
+        if not messages:
+            messages.append({"role": "user", "content": "请开始你的工作。"})
+        return messages
+
+    def _extract_coder_response_for(self, msg: DebateMessage, target_agent: str) -> str | None:
+        """从 Coder 的回应中提取针对特定攻击者的部分。"""
+        if not msg.structured or not isinstance(msg.structured, dict):
+            return msg.content
+
+        responses = msg.structured.get("responses", [])
+        relevant_parts = []
+        for resp in responses:
+            ref = resp.get("finding_ref", "").lower()
+            if target_agent.lower() in ref:
+                action = resp.get("action", "")
+                explanation = resp.get("explanation", "")
+                relevant_parts.append(f"[{action}] {explanation}")
+
+        if relevant_parts:
+            return "\n".join(relevant_parts)
+        return msg.content
+
+    def _filter_summary_for(self, agent: str) -> str:
+        """从早期轮次摘要中过滤与特定攻击者相关的内容。"""
+        parts = []
+        for r, s in sorted(self.round_summaries.items()):
+            if agent in s.lower() or "coder" in s.lower():
+                parts.append(f"Round {r}: {s}")
+        return "\n".join(parts)
 
     async def compress_early_rounds(self, llm_client=None):
         """Compress the oldest full round into a summary via unified call_agent."""

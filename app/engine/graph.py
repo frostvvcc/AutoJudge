@@ -370,7 +370,42 @@ async def correctness_node(state: DebateState) -> dict:
     return await _attacker_node(state, correctness_agent, "correctness")
 
 
+def _build_structured_findings_summary(round_msgs: list[dict], exclude_agent: str) -> str:
+    """
+    Layer 3: Structured Summary Injection
+    从其他攻击者的结构化输出中提取 findings，
+    以 [SEVERITY] category: description 格式注入，不传完整自然语言。
+    """
+    lines = []
+    for m in round_msgs:
+        if m["agent"] == exclude_agent:
+            continue
+        structured = m.get("structured")
+        if not structured or not isinstance(structured, dict):
+            if m.get("content"):
+                lines.append(f"[{m['agent'].upper()}] {m['content'][:200]}")
+            continue
+        findings = structured.get("findings", [])
+        stance = structured.get("stance", "unknown")
+        if findings:
+            for f in findings:
+                sev = f.get("severity", "unknown").upper()
+                cat = f.get("category", "")
+                desc = f.get("description", "")
+                lines.append(f"[{m['agent'].upper()}] [{sev}] {cat}: {desc}")
+        elif stance == "attacking":
+            msg_text = structured.get("message", "有顾虑但未提供具体 findings")
+            lines.append(f"[{m['agent'].upper()}] [MEDIUM] {msg_text[:200]}")
+        else:
+            lines.append(f"[{m['agent'].upper()}] stance={stance}，无新发现")
+    return "\n".join(lines)
+
+
 async def cross_review_node(state: DebateState) -> dict:
+    """
+    Layer 3 实现：交叉审阅时注入结构化 findings 摘要，
+    而不是其他攻击者的完整自然语言发言。
+    """
     ctx, budget = _build_context(state)
     current_round = state["round"]
 
@@ -383,16 +418,6 @@ async def cross_review_node(state: DebateState) -> dict:
 
     if len(round_msgs) < 2:
         return _check_and_return_consensus(state, round_msgs)
-
-    findings_summary = "\n\n".join(
-        f"[{m['agent'].upper()}] {m['content']}" for m in round_msgs
-    )
-
-    cross_prompt = (
-        f"以下是其他 Attacker 本轮的发现：\n{findings_summary}\n"
-        "请补充你认为重要但对方遗漏的观点，或对对方的发现表示支持/质疑。"
-        "如果没有补充，直接确认。"
-    )
 
     agents = {
         "security": security_agent,
@@ -409,6 +434,12 @@ async def cross_review_node(state: DebateState) -> dict:
 
     async def safe_cross(name, agent):
         try:
+            others_findings = _build_structured_findings_summary(round_msgs, exclude_agent=name)
+            cross_prompt = (
+                f"以下是其他 Attacker 本轮的结构化发现：\n{others_findings}\n\n"
+                "请补充你认为重要但对方遗漏的观点，或对对方的发现表示支持/质疑。"
+                "如果没有补充，直接确认。"
+            )
             return name, await agent.speak(ctx, cross_prompt, budget)
         except Exception as e:
             logger.warning("cross_review_%s_failed error=%s", name, e)
@@ -429,7 +460,6 @@ async def cross_review_node(state: DebateState) -> dict:
 
     updated_state = {**state, "messages": new_cross_msgs}
 
-    # Interrupt: only pause if enable_interrupt is set (WebSocket mode)
     if state.get("enable_interrupt"):
         user_input = interrupt({
             "type": "round_complete",
