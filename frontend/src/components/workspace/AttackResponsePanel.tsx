@@ -58,7 +58,7 @@ export default function AttackResponsePanel({ messages, currentRound: _currentRo
                 <div className="h-px flex-1 bg-gradient-to-r from-transparent via-gray-700 to-transparent" />
                 <div className="flex items-center gap-2 px-3 py-1.5 bg-gray-800/80 rounded-full">
                   <div className="w-2 h-2 rounded-full bg-blue-500" />
-                  <span className="text-xs font-semibold text-gray-300">Round {round}</span>
+                  <span className="text-xs font-semibold text-gray-600">Round {round}</span>
                   {(acceptCount > 0 || rebutCount > 0) && (
                     <span className="text-xs text-gray-500">
                       {acceptCount > 0 && <span className="text-green-400">{acceptCount} 修复</span>}
@@ -77,7 +77,7 @@ export default function AttackResponsePanel({ messages, currentRound: _currentRo
             {round === 0 && (
               <div className="flex items-center gap-3 mb-3">
                 <div className="h-px flex-1 bg-gradient-to-r from-transparent via-gray-700 to-transparent" />
-                <div className="px-3 py-1 bg-gray-800/60 rounded-full">
+                <div className="px-3 py-1 bg-gray-100 rounded-full">
                   <span className="text-xs text-gray-500">准备阶段</span>
                 </div>
                 <div className="h-px flex-1 bg-gradient-to-r from-transparent via-gray-700 to-transparent" />
@@ -129,7 +129,7 @@ export default function AttackResponsePanel({ messages, currentRound: _currentRo
                         <div className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${AGENT_DOTS[msg.agent] ?? 'bg-gray-500'}`} />
                         <div>
                           <span className="text-xs font-medium text-purple-300">{AGENT_LABELS[msg.agent]}</span>
-                          <div className="text-xs text-gray-400 mt-0.5 prose prose-invert prose-xs max-w-none">
+                          <div className="text-xs text-gray-400 mt-0.5 prose prose-xs max-w-none">
                             <ReactMarkdown>{msg.content.replace('[交叉审阅] ', '')}</ReactMarkdown>
                           </div>
                         </div>
@@ -141,7 +141,7 @@ export default function AttackResponsePanel({ messages, currentRound: _currentRo
 
               {/* System messages */}
               {systemMsgs.map((msg, i) => (
-                <div key={`sys-${round}-${i}`} className="flex items-start gap-2 px-3 py-2 bg-gray-800/30 rounded text-xs text-gray-500">
+                <div key={`sys-${round}-${i}`} className="flex items-start gap-2 px-3 py-2 bg-gray-50 rounded text-xs text-gray-500">
                   <svg className="w-3.5 h-3.5 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" />
                   </svg>
@@ -160,7 +160,7 @@ export default function AttackResponsePanel({ messages, currentRound: _currentRo
                     </div>
                     <span className="text-sm font-semibold text-amber-400">Arbitrator 仲裁</span>
                   </div>
-                  <div className="text-sm text-gray-300 prose prose-invert prose-sm max-w-none prose-headings:text-amber-300">
+                  <div className="text-sm text-gray-600 prose prose-sm max-w-none prose-headings:text-amber-300">
                     <ReactMarkdown>{msg.content}</ReactMarkdown>
                   </div>
                 </div>
@@ -177,7 +177,7 @@ export default function AttackResponsePanel({ messages, currentRound: _currentRo
                     </div>
                     <span className="text-sm font-semibold text-purple-400">Judge 报告</span>
                   </div>
-                  <div className="text-sm text-gray-300 prose prose-invert prose-sm max-w-none">
+                  <div className="text-sm text-gray-600 prose prose-sm max-w-none">
                     <ReactMarkdown>{msg.content}</ReactMarkdown>
                   </div>
                 </div>
@@ -214,7 +214,7 @@ function CoderResponseCard({ message, round }: { message: DebateMessage; round: 
             {isFix ? 'Coder 仲裁修复' : round === 1 ? 'Coder 初版代码' : 'Coder 回应'}
           </span>
           {hasCode && (
-            <span className="text-xs px-1.5 py-0.5 bg-gray-800 text-gray-400 rounded">
+            <span className="text-xs px-1.5 py-0.5 bg-gray-100 text-gray-400 rounded">
               代码已更新
             </span>
           )}
@@ -250,7 +250,7 @@ function CoderResponseCard({ message, round }: { message: DebateMessage; round: 
                     {isAccept ? '接受并修复' : '用证据反驳'}
                   </span>
                   {resp.finding_ref && (
-                    <span className="text-xs text-gray-500 bg-gray-800/50 px-1.5 py-0.5 rounded">
+                    <span className="text-xs text-gray-500 bg-gray-50 px-1.5 py-0.5 rounded">
                       {resp.finding_ref}
                     </span>
                   )}
@@ -259,7 +259,7 @@ function CoderResponseCard({ message, round }: { message: DebateMessage; round: 
                   <p className="text-xs text-gray-400 leading-relaxed ml-6">{resp.explanation}</p>
                 )}
                 {resp.evidence && (
-                  <div className="ml-6 mt-1 px-2 py-1 bg-gray-800/50 rounded text-xs text-gray-500 font-mono">
+                  <div className="ml-6 mt-1 px-2 py-1 bg-gray-50 rounded text-xs text-gray-500 font-mono">
                     {resp.evidence}
                   </div>
                 )}
@@ -270,12 +270,12 @@ function CoderResponseCard({ message, round }: { message: DebateMessage; round: 
       )}
 
       {/* Content */}
-      <div className={`text-sm text-gray-300 prose prose-invert prose-sm max-w-none
-                       prose-headings:text-gray-200 prose-code:text-blue-300 prose-code:bg-gray-800 prose-code:px-1 prose-code:rounded
+      <div className={`text-sm text-gray-600 prose prose-sm max-w-none
+                       prose-headings:text-gray-700 prose-code:text-blue-300 prose-code:bg-gray-100 prose-code:px-1 prose-code:rounded
                        ${isLong && !expanded ? 'max-h-[180px] overflow-hidden relative' : ''}`}>
         <ReactMarkdown>{message.content.replace(/^\[.*?\]\s*/, '')}</ReactMarkdown>
         {isLong && !expanded && (
-          <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-gray-950 to-transparent" />
+          <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-gray-50 to-transparent" />
         )}
       </div>
       {isLong && (
@@ -299,13 +299,13 @@ function AttackerCard({ message }: { message: DebateMessage }) {
 
   return (
     <div className={`rounded-lg border p-3 transition-colors ${
-      isSatisfied ? 'border-green-800/40 bg-green-900/5' : 'border-gray-700/60 bg-gray-800/20'
+      isSatisfied ? 'border-green-800/40 bg-green-900/5' : 'border-gray-300/60 bg-gray-50'
     }`}>
       {/* Header */}
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-1.5">
           <span className="text-sm">{agentIcon}</span>
-          <span className="text-xs font-semibold text-gray-300">
+          <span className="text-xs font-semibold text-gray-600">
             {AGENT_LABELS[message.agent]}
           </span>
         </div>
@@ -314,7 +314,7 @@ function AttackerCard({ message }: { message: DebateMessage }) {
             ? 'bg-green-900/50 text-green-400 border border-green-700/50'
             : stance === 'attacking'
               ? 'bg-red-900/50 text-red-400 border border-red-700/50'
-              : 'bg-gray-800 text-gray-500'
+              : 'bg-gray-100 text-gray-500'
         }`}>
           {isSatisfied ? '✓ 通过' : stance === 'attacking' ? '有问题' : '审查中'}
         </span>
@@ -324,7 +324,7 @@ function AttackerCard({ message }: { message: DebateMessage }) {
       {findings.length > 0 ? (
         <div className="space-y-1.5">
           {findings.map((f, i) => (
-            <div key={i} className="bg-gray-800/40 rounded px-2.5 py-1.5">
+            <div key={i} className="bg-gray-50 rounded px-2.5 py-1.5">
               <div className="flex items-center gap-1.5 mb-0.5">
                 <span className={`w-1.5 h-1.5 rounded-full ${
                   f.severity === 'critical' ? 'bg-red-500' :

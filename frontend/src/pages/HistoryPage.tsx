@@ -78,7 +78,7 @@ export default function HistoryPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-950">
+    <div className="min-h-screen bg-gray-50">
       <NavBar />
 
       <main className="max-w-5xl mx-auto px-4 sm:px-6 py-6 space-y-6">
@@ -100,7 +100,7 @@ export default function HistoryPage() {
 
         {/* Header */}
         <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-white">历史记录</h2>
+          <h2 className="text-lg font-semibold text-gray-900">历史记录</h2>
         </div>
 
         {/* Search & Filters */}
@@ -115,12 +115,12 @@ export default function HistoryPage() {
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 placeholder="搜索任务描述..."
-                className="w-full bg-gray-900 border border-gray-800 rounded-lg pl-10 pr-4 py-2.5 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500 transition-colors"
+                className="w-full bg-white border border-gray-200 rounded-lg pl-10 pr-4 py-2.5 text-sm text-gray-800 placeholder-gray-500 focus:outline-none focus:border-blue-500 transition-colors"
               />
             </div>
             <button
               type="submit"
-              className="px-4 py-2.5 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm text-gray-300 transition-colors"
+              className="px-4 py-2.5 bg-gray-100 hover:bg-gray-100 border border-gray-300 rounded-lg text-sm text-gray-600 transition-colors"
             >
               搜索
             </button>
@@ -131,7 +131,7 @@ export default function HistoryPage() {
               setLangFilter(e.target.value);
               setPage(1);
             }}
-            className="bg-gray-900 border border-gray-800 rounded-lg px-3 py-2.5 text-sm text-gray-100 focus:outline-none focus:border-blue-500"
+            className="bg-white border border-gray-200 rounded-lg px-3 py-2.5 text-sm text-gray-800 focus:outline-none focus:border-blue-500"
           >
             <option value="">所有语言</option>
             {Object.entries(LANG_LABELS).map(([k, v]) => (
@@ -144,24 +144,24 @@ export default function HistoryPage() {
         {loading ? (
           <div className="space-y-3">
             {Array.from({ length: 4 }).map((_, i) => (
-              <div key={i} className="bg-gray-900 border border-gray-800 rounded-lg p-4 animate-pulse">
-                <div className="h-4 bg-gray-800 rounded w-3/4 mb-3" />
+              <div key={i} className="bg-white border border-gray-200 rounded-lg p-4 animate-pulse">
+                <div className="h-4 bg-gray-100 rounded w-3/4 mb-3" />
                 <div className="flex gap-3">
-                  <div className="h-3 bg-gray-800 rounded w-16" />
-                  <div className="h-3 bg-gray-800 rounded w-20" />
-                  <div className="h-3 bg-gray-800 rounded w-12" />
+                  <div className="h-3 bg-gray-100 rounded w-16" />
+                  <div className="h-3 bg-gray-100 rounded w-20" />
+                  <div className="h-3 bg-gray-100 rounded w-12" />
                 </div>
               </div>
             ))}
           </div>
         ) : !history || history.items.length === 0 ? (
           <div className="text-center py-16">
-            <div className="w-16 h-16 bg-gray-800 rounded-2xl flex items-center justify-center mx-auto mb-4">
+            <div className="w-16 h-16 bg-gray-100 rounded-2xl flex items-center justify-center mx-auto mb-4">
               <svg className="w-8 h-8 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
               </svg>
             </div>
-            <h3 className="text-base font-medium text-white mb-2">还没有任何历史记录</h3>
+            <h3 className="text-base font-medium text-gray-900 mb-2">还没有任何历史记录</h3>
             <p className="text-sm text-gray-500 mb-2 max-w-xs mx-auto">
               AutoJudge 会自动保存每次代码生成的完整辩论过程、风险评估和质量报告
             </p>
@@ -183,15 +183,15 @@ export default function HistoryPage() {
             {history.items.map((item) => (
               <div
                 key={item.sid}
-                className="bg-gray-900 border border-gray-800 rounded-lg p-4 hover:border-gray-700 transition-colors group"
+                className="bg-white border border-gray-200 rounded-lg p-4 hover:border-gray-300 transition-colors group"
               >
                 <div className="flex items-start justify-between gap-4">
                   <Link to={`/workspace/${item.sid}`} className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-100 line-clamp-2 mb-2 group-hover:text-white transition-colors">
+                    <p className="text-sm text-gray-800 line-clamp-2 mb-2 group-hover:text-gray-900 transition-colors">
                       {item.task}
                     </p>
                     <div className="flex flex-wrap items-center gap-2 sm:gap-3 text-xs text-gray-500">
-                      <span className="px-2 py-0.5 bg-gray-800 rounded text-gray-400">
+                      <span className="px-2 py-0.5 bg-gray-100 rounded text-gray-400">
                         {LANG_LABELS[item.language] || item.language}
                       </span>
                       {item.converged ? (
@@ -231,7 +231,7 @@ export default function HistoryPage() {
             <button
               onClick={() => setPage((p) => Math.max(1, p - 1))}
               disabled={page === 1}
-              className="px-4 py-2 text-sm bg-gray-800 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-gray-300 transition-colors"
+              className="px-4 py-2 text-sm bg-gray-100 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-gray-600 transition-colors"
             >
               上一页
             </button>
@@ -241,7 +241,7 @@ export default function HistoryPage() {
             <button
               onClick={() => setPage((p) => Math.min(history.total_pages, p + 1))}
               disabled={page === history.total_pages}
-              className="px-4 py-2 text-sm bg-gray-800 hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-gray-300 transition-colors"
+              className="px-4 py-2 text-sm bg-gray-100 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed rounded-lg text-gray-600 transition-colors"
             >
               下一页
             </button>

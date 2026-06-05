@@ -6,7 +6,7 @@ interface Props {
 
 export default function MetricsBar({ metrics }: Props) {
   return (
-    <div className="bg-gray-900 rounded-lg border border-gray-800 p-4">
+    <div className="bg-white rounded-lg border border-gray-200 p-4">
       <h3 className="text-sm font-medium text-gray-400 mb-3">指标</h3>
       <div className="grid grid-cols-2 gap-3">
         <MetricItem
@@ -32,9 +32,9 @@ export default function MetricsBar({ metrics }: Props) {
 
 function MetricItem({ label, value }: { label: string; value: string }) {
   return (
-    <div className="bg-gray-800/50 rounded px-3 py-2">
+    <div className="bg-gray-50 rounded px-3 py-2">
       <div className="text-xs text-gray-500">{label}</div>
-      <div className="text-sm font-medium text-gray-200">{value}</div>
+      <div className="text-sm font-medium text-gray-700">{value}</div>
     </div>
   );
 }

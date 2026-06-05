@@ -47,20 +47,20 @@ const STEPS = [
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-gray-950">
+    <div className="min-h-screen bg-gray-50">
       {/* Nav */}
-      <header className="border-b border-gray-800/50 px-6 py-4">
+      <header className="border-b border-gray-200 px-6 py-4">
         <div className="flex items-center justify-between max-w-6xl mx-auto">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-              <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <svg className="w-4 h-4 text-gray-900" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5" />
               </svg>
             </div>
-            <span className="text-lg font-bold text-white">AutoJudge</span>
+            <span className="text-lg font-bold text-gray-900">AutoJudge</span>
           </div>
           <div className="flex items-center gap-3">
-            <Link to="/login" className="px-4 py-2 text-sm text-gray-300 hover:text-white transition-colors">
+            <Link to="/login" className="px-4 py-2 text-sm text-gray-600 hover:text-gray-900 transition-colors">
               登录
             </Link>
             <Link
@@ -80,7 +80,7 @@ export default function LandingPage() {
             <span className="w-1.5 h-1.5 bg-blue-400 rounded-full animate-pulse" />
             Multi-Agent Adversarial Code Review
           </div>
-          <h1 className="text-4xl sm:text-5xl font-bold text-white leading-tight mb-6">
+          <h1 className="text-4xl sm:text-5xl font-bold text-gray-900 leading-tight mb-6">
             AI 驱动的
             <span className="bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
               {' '}多维代码审查{' '}
@@ -100,7 +100,7 @@ export default function LandingPage() {
             </Link>
             <a
               href="#how-it-works"
-              className="px-8 py-3 bg-gray-800 hover:bg-gray-700 border border-gray-700 rounded-lg text-sm font-medium text-gray-300 transition-colors"
+              className="px-8 py-3 bg-gray-100 hover:bg-gray-100 border border-gray-300 rounded-lg text-sm font-medium text-gray-600 transition-colors"
             >
               了解工作流程
             </a>
@@ -111,7 +111,7 @@ export default function LandingPage() {
       {/* Feature cards */}
       <section className="px-6 py-16">
         <div className="max-w-5xl mx-auto">
-          <h2 className="text-center text-2xl font-bold text-white mb-3">三维对抗式审查</h2>
+          <h2 className="text-center text-2xl font-bold text-gray-900 mb-3">三维对抗式审查</h2>
           <p className="text-center text-sm text-gray-500 mb-10">每个 Agent 独立审查，互不妥协，直到代码无懈可击</p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
             {FEATURES.map((f) => (
@@ -120,7 +120,7 @@ export default function LandingPage() {
                 className={`bg-gradient-to-b ${f.color} border rounded-xl p-6 hover:scale-[1.02] transition-transform`}
               >
                 <div className={`${f.iconColor} mb-4`}>{f.icon}</div>
-                <h3 className="text-base font-semibold text-white mb-2">{f.title}</h3>
+                <h3 className="text-base font-semibold text-gray-900 mb-2">{f.title}</h3>
                 <p className="text-sm text-gray-400 leading-relaxed">{f.desc}</p>
               </div>
             ))}
@@ -129,9 +129,9 @@ export default function LandingPage() {
       </section>
 
       {/* How it works */}
-      <section id="how-it-works" className="px-6 py-16 bg-gray-900/30">
+      <section id="how-it-works" className="px-6 py-16 bg-gray-100">
         <div className="max-w-5xl mx-auto">
-          <h2 className="text-center text-2xl font-bold text-white mb-3">工作流程</h2>
+          <h2 className="text-center text-2xl font-bold text-gray-900 mb-3">工作流程</h2>
           <p className="text-center text-sm text-gray-500 mb-12">从需求到交付，全自动化的代码审查管线</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
             {STEPS.map((s) => (
@@ -140,7 +140,7 @@ export default function LandingPage() {
                   {s.num}
                 </div>
                 <div>
-                  <h3 className="text-sm font-semibold text-white mb-1">{s.title}</h3>
+                  <h3 className="text-sm font-semibold text-gray-900 mb-1">{s.title}</h3>
                   <p className="text-xs text-gray-500 leading-relaxed">{s.desc}</p>
                 </div>
               </div>
@@ -152,7 +152,7 @@ export default function LandingPage() {
       {/* CTA */}
       <section className="px-6 py-20">
         <div className="max-w-2xl mx-auto text-center">
-          <h2 className="text-2xl font-bold text-white mb-4">开始使用 AutoJudge</h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-4">开始使用 AutoJudge</h2>
           <p className="text-sm text-gray-400 mb-8">注册即可免费体验多 Agent 代码审查</p>
           <Link
             to="/register"
@@ -164,7 +164,7 @@ export default function LandingPage() {
       </section>
 
       {/* Footer */}
-      <footer className="border-t border-gray-800/50 px-6 py-8">
+      <footer className="border-t border-gray-200 px-6 py-8">
         <div className="max-w-6xl mx-auto flex items-center justify-between text-xs text-gray-600">
           <span>&copy; 2026 AutoJudge</span>
           <div className="flex items-center gap-4">

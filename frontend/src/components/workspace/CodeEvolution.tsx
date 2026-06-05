@@ -87,16 +87,16 @@ export default function CodeEvolution({ versions, language }: Props) {
 
   if (sorted.length === 0) {
     return (
-      <div className="bg-gray-900 rounded-lg border border-gray-800 p-6 text-center text-gray-500 text-sm">
+      <div className="bg-white rounded-lg border border-gray-200 p-6 text-center text-gray-500 text-sm">
         暂无代码版本
       </div>
     );
   }
 
   return (
-    <div className="bg-gray-900 rounded-lg border border-gray-800 overflow-hidden">
+    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
       {/* Header with version tabs */}
-      <div className="flex items-center gap-1 px-4 py-3 border-b border-gray-800 bg-gray-900/80">
+      <div className="flex items-center gap-1 px-4 py-3 border-b border-gray-200 bg-gray-900/80">
         <div className="flex items-center gap-2 mr-3">
           <svg className="w-4 h-4 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5" />
@@ -114,7 +114,7 @@ export default function CodeEvolution({ versions, language }: Props) {
                 className={`px-3 py-1.5 rounded text-xs font-semibold transition-colors ${
                   isSelected
                     ? 'bg-blue-500/20 text-blue-400 border border-blue-500/40'
-                    : 'bg-gray-800 text-gray-500 border border-gray-700/50 hover:text-gray-300 hover:border-gray-600'
+                    : 'bg-gray-100 text-gray-500 border border-gray-200 hover:text-gray-600 hover:border-gray-600'
                 }`}
               >
                 v{v.version}
@@ -136,7 +136,7 @@ export default function CodeEvolution({ versions, language }: Props) {
             </span>
             <button
               onClick={() => setSelected([selected[1]])}
-              className="ml-2 px-2 py-0.5 bg-gray-800 text-gray-400 rounded hover:text-gray-200 transition-colors"
+              className="ml-2 px-2 py-0.5 bg-gray-100 text-gray-400 rounded hover:text-gray-700 transition-colors"
             >
               exit diff
             </button>
@@ -166,10 +166,10 @@ export default function CodeEvolution({ versions, language }: Props) {
                         : ''
                   }
                 >
-                  <td className="w-10 text-right pr-2 text-gray-600 select-none border-r border-gray-800/50 px-2">
+                  <td className="w-10 text-right pr-2 text-gray-600 select-none border-r border-gray-200 px-2">
                     {line.oldLineNum ?? ''}
                   </td>
-                  <td className="w-10 text-right pr-2 text-gray-600 select-none border-r border-gray-800/50 px-2">
+                  <td className="w-10 text-right pr-2 text-gray-600 select-none border-r border-gray-200 px-2">
                     {line.newLineNum ?? ''}
                   </td>
                   <td className="w-5 text-center select-none">
@@ -206,11 +206,11 @@ export default function CodeEvolution({ versions, language }: Props) {
           <table className="w-full border-collapse">
             <tbody>
               {singleCode.split('\n').map((line, i) => (
-                <tr key={i} className="hover:bg-gray-800/30">
-                  <td className="w-10 text-right text-gray-600 select-none border-r border-gray-800/50 px-2">
+                <tr key={i} className="hover:bg-gray-50">
+                  <td className="w-10 text-right text-gray-600 select-none border-r border-gray-200 px-2">
                     {i + 1}
                   </td>
-                  <td className="pl-4 pr-4 text-gray-300 whitespace-pre">{line}</td>
+                  <td className="pl-4 pr-4 text-gray-600 whitespace-pre">{line}</td>
                 </tr>
               ))}
             </tbody>

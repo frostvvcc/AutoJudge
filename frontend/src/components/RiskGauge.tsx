@@ -30,7 +30,7 @@ export default function RiskGauge({ risk }: Props) {
   ] as const;
 
   return (
-    <div className="bg-gray-900 rounded-lg border border-gray-800 p-4">
+    <div className="bg-white rounded-lg border border-gray-200 p-4">
       <h3 className="text-sm font-medium text-gray-400 mb-3">风险评级</h3>
       <div className="space-y-2">
         {dimensions.map(({ key, label, icon }) => {
@@ -40,7 +40,7 @@ export default function RiskGauge({ risk }: Props) {
               key={key}
               className={`flex items-center justify-between px-3 py-2 rounded ${RISK_BG[level]}`}
             >
-              <span className="text-sm text-gray-300">
+              <span className="text-sm text-gray-600">
                 {icon} {label}
               </span>
               <span className={`text-sm font-medium ${RISK_COLORS[level]}`}>

@@ -14,13 +14,13 @@ export default function App() {
   const debate = useDebate();
 
   return (
-    <div className="min-h-screen bg-gray-950">
+    <div className="min-h-screen bg-gray-50">
       {/* Header */}
-      <header className="border-b border-gray-800 px-6 py-4">
+      <header className="border-b border-gray-200 px-6 py-4">
         <div className="flex items-center justify-between max-w-7xl mx-auto">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg" />
-            <h1 className="text-xl font-bold text-white">AutoJudge</h1>
+            <h1 className="text-xl font-bold text-gray-900">AutoJudge</h1>
             <span className="text-sm text-gray-500">
               多维对抗式代码进化引擎
             </span>
@@ -39,15 +39,15 @@ export default function App() {
             </button>
             <Link
               to="/history"
-              className="text-sm text-gray-400 hover:text-white transition-colors"
+              className="text-sm text-gray-400 hover:text-gray-900 transition-colors"
             >
               历史记录
             </Link>
             <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-full bg-gray-700 flex items-center justify-center text-xs text-white font-medium">
+              <div className="w-7 h-7 rounded-full bg-gray-700 flex items-center justify-center text-xs text-gray-900 font-medium">
                 {user?.username?.[0]?.toUpperCase()}
               </div>
-              <span className="text-sm text-gray-300">{user?.username}</span>
+              <span className="text-sm text-gray-600">{user?.username}</span>
             </div>
             <button
               onClick={() => {
@@ -80,7 +80,7 @@ export default function App() {
                   <div className="flex gap-2">
                     <button
                       onClick={() => debate.skipAttacker('performance')}
-                      className="px-3 py-1 text-xs bg-gray-800 hover:bg-gray-700 rounded border border-gray-700"
+                      className="px-3 py-1 text-xs bg-gray-100 hover:bg-gray-100 rounded border border-gray-300"
                     >
                       跳过性能
                     </button>
@@ -136,7 +136,7 @@ export default function App() {
             <p className="text-red-400">{debate.error}</p>
             <button
               onClick={debate.reset}
-              className="shrink-0 ml-4 px-4 py-1.5 bg-gray-800 hover:bg-gray-700 rounded text-sm text-gray-300 transition-colors"
+              className="shrink-0 ml-4 px-4 py-1.5 bg-gray-100 hover:bg-gray-100 rounded text-sm text-gray-600 transition-colors"
             >
               重试
             </button>

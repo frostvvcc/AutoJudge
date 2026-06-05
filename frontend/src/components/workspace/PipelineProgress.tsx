@@ -26,7 +26,7 @@ export default function PipelineProgress({ phase, currentRound, maxRounds: _maxR
   const activeIdx = phase === 'idle' ? -1 : phaseIndex(phase);
 
   return (
-    <div className="bg-gray-900 rounded-lg border border-gray-800 px-4 py-3">
+    <div className="bg-white rounded-lg border border-gray-200 px-4 py-3">
       <div className="flex items-center gap-1 mb-2 overflow-x-auto">
         {PHASES.map((p, i) => {
           const isCompleted = i < activeIdx;
@@ -43,7 +43,7 @@ export default function PipelineProgress({ phase, currentRound, maxRounds: _maxR
                     ? 'bg-green-500/20 text-green-400'
                     : isCurrent
                       ? 'bg-blue-500/20 text-blue-400 font-semibold'
-                      : 'bg-gray-800 text-gray-600'
+                      : 'bg-gray-100 text-gray-600'
                 }`}
               >
                 {isCompleted ? '✓ ' : isCurrent ? '● ' : ''}{label}

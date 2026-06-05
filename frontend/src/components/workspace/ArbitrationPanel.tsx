@@ -22,7 +22,7 @@ interface Props {
 }
 
 const VERDICT_STYLES: Record<string, { bg: string; text: string; border: string; label: string }> = {
-  dismissed: { bg: 'bg-gray-800/60', text: 'text-gray-400', border: 'border-gray-700/50', label: 'Dismissed' },
+  dismissed: { bg: 'bg-gray-100', text: 'text-gray-400', border: 'border-gray-200', label: 'Dismissed' },
   acknowledged: { bg: 'bg-blue-900/30', text: 'text-blue-400', border: 'border-blue-700/40', label: 'Acknowledged' },
   must_fix: { bg: 'bg-red-900/30', text: 'text-red-400', border: 'border-red-700/40', label: 'Must Fix' },
   deferred: { bg: 'bg-yellow-900/30', text: 'text-yellow-400', border: 'border-yellow-700/40', label: 'Deferred' },
@@ -86,9 +86,9 @@ export default function ArbitrationPanel({
   const overallStyle = getVerdictStyle(overallVerdict);
 
   return (
-    <div className="bg-gray-900 rounded-lg border border-gray-800 overflow-hidden">
+    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-gray-800 bg-gray-900/80">
+      <div className="px-4 py-3 border-b border-gray-200 bg-gray-900/80">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <div className="w-6 h-6 rounded-full bg-amber-600/20 flex items-center justify-center">
@@ -103,7 +103,7 @@ export default function ArbitrationPanel({
               {overallStyle.label}
             </span>
             <div className="flex items-center gap-1.5">
-              <div className="w-16 h-1.5 bg-gray-800 rounded-full overflow-hidden">
+              <div className="w-16 h-1.5 bg-gray-100 rounded-full overflow-hidden">
                 <div
                   className="h-full rounded-full bg-amber-500/60 transition-all"
                   style={{ width: `${Math.round(confidence * 100)}%` }}
@@ -144,7 +144,7 @@ export default function ArbitrationPanel({
                       {ruling.re_assessed_severity.toUpperCase()}
                     </span>
                   </div>
-                  <span className="text-xs text-gray-600 bg-gray-800/50 px-1.5 py-0.5 rounded">
+                  <span className="text-xs text-gray-600 bg-gray-50 px-1.5 py-0.5 rounded">
                     {ruling.dispute_id}
                   </span>
                 </div>
@@ -157,7 +157,7 @@ export default function ArbitrationPanel({
 
               {/* Override controls */}
               {mode === 'override' && (
-                <div className="flex items-center gap-2 mt-3 pt-2 border-t border-gray-700/30">
+                <div className="flex items-center gap-2 mt-3 pt-2 border-t border-gray-200">
                   {critical ? (
                     <div className="flex items-center gap-1.5 text-xs text-red-400/70">
                       <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -181,7 +181,7 @@ export default function ArbitrationPanel({
                       </button>
                       <button
                         onClick={() => handleOverrideAction(ruling.dispute_id, 'dismiss', ruling.verdict)}
-                        className="px-2 py-1 text-xs bg-gray-800 text-gray-400 border border-gray-700/50 rounded hover:text-gray-200 transition-colors"
+                        className="px-2 py-1 text-xs bg-gray-100 text-gray-400 border border-gray-200 rounded hover:text-gray-700 transition-colors"
                       >
                         Dismiss
                       </button>
@@ -195,7 +195,7 @@ export default function ArbitrationPanel({
       </div>
 
       {/* Action bar */}
-      <div className="px-4 py-3 border-t border-gray-800 flex items-center justify-end gap-3">
+      <div className="px-4 py-3 border-t border-gray-200 flex items-center justify-end gap-3">
         {mode === 'view' ? (
           <>
             <button
@@ -215,7 +215,7 @@ export default function ArbitrationPanel({
           <>
             <button
               onClick={() => { setMode('view'); setOverrides({}); }}
-              className="px-4 py-2 text-xs font-medium text-gray-400 bg-gray-800 border border-gray-700/50 rounded-lg hover:text-gray-200 transition-colors"
+              className="px-4 py-2 text-xs font-medium text-gray-400 bg-gray-100 border border-gray-200 rounded-lg hover:text-gray-700 transition-colors"
             >
               取消
             </button>
@@ -225,7 +225,7 @@ export default function ArbitrationPanel({
               className={`px-4 py-2 text-xs font-medium rounded-lg transition-colors ${
                 Object.keys(overrides).length > 0
                   ? 'text-amber-400 bg-amber-900/20 border border-amber-700/40 hover:bg-amber-900/40'
-                  : 'text-gray-600 bg-gray-800 border border-gray-700/30 cursor-not-allowed'
+                  : 'text-gray-600 bg-gray-100 border border-gray-200 cursor-not-allowed'
               }`}
             >
               提交异议 ({Object.keys(overrides).length})

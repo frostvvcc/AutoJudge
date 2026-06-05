@@ -99,7 +99,7 @@ export default function UserInteractionDock({
       <div className="h-px bg-gradient-to-r from-transparent via-gray-700 to-transparent" />
 
       <div
-        className={`bg-gray-900/95 backdrop-blur-sm border-t border-gray-800 px-6 py-3 transition-opacity duration-150 ${
+        className={`bg-gray-900/95 backdrop-blur-sm border-t border-gray-200 px-6 py-3 transition-opacity duration-150 ${
           isTransitioning ? 'opacity-0' : 'opacity-100'
         }`}
       >
@@ -137,7 +137,7 @@ export default function UserInteractionDock({
                   </button>
                   <button
                     onClick={() => onPlanSelect('auto')}
-                    className="px-4 py-2 text-xs font-medium text-gray-400 bg-gray-800 border border-gray-700/50 rounded-lg hover:text-gray-200 transition-colors"
+                    className="px-4 py-2 text-xs font-medium text-gray-400 bg-gray-100 border border-gray-200 rounded-lg hover:text-gray-700 transition-colors"
                   >
                     交给Coder选择
                   </button>
@@ -151,7 +151,7 @@ export default function UserInteractionDock({
                     onChange={(e) => setChatInput(e.target.value)}
                     onKeyDown={handleChatKeyDown}
                     placeholder="和 Coder 聊聊你的想法..."
-                    className="flex-1 bg-gray-800/60 border border-gray-700/50 rounded-lg px-3 py-2 text-xs text-gray-300 placeholder-gray-600 focus:outline-none focus:border-blue-600/50 transition-colors"
+                    className="flex-1 bg-gray-100 border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-600 placeholder-gray-600 focus:outline-none focus:border-blue-600/50 transition-colors"
                   />
                   <button
                     onClick={handleChatSubmit}
@@ -159,7 +159,7 @@ export default function UserInteractionDock({
                     className={`px-3 py-2 rounded-lg text-xs transition-colors ${
                       chatInput.trim()
                         ? 'bg-blue-600/30 text-blue-400 border border-blue-600/40 hover:bg-blue-600/50'
-                        : 'bg-gray-800 text-gray-600 border border-gray-700/30 cursor-not-allowed'
+                        : 'bg-gray-100 text-gray-600 border border-gray-200 cursor-not-allowed'
                     }`}
                   >
                     <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -230,7 +230,7 @@ export default function UserInteractionDock({
                         onChange={(e) => setRejectInput(e.target.value)}
                         onKeyDown={handleRejectKeyDown}
                         placeholder="说说你的想法..."
-                        className="flex-1 bg-gray-800/60 border border-gray-700/50 rounded-lg px-3 py-2 text-xs text-gray-300 placeholder-gray-600 focus:outline-none focus:border-yellow-600/50 transition-colors"
+                        className="flex-1 bg-gray-100 border border-gray-200 rounded-lg px-3 py-2 text-xs text-gray-600 placeholder-gray-600 focus:outline-none focus:border-yellow-600/50 transition-colors"
                       />
                       <button
                         onClick={handleRejectSubmit}
@@ -238,7 +238,7 @@ export default function UserInteractionDock({
                         className={`px-3 py-2 rounded-lg text-xs transition-colors ${
                           rejectInput.trim()
                             ? 'bg-yellow-600/30 text-yellow-400 border border-yellow-600/40 hover:bg-yellow-600/50'
-                            : 'bg-gray-800 text-gray-600 border border-gray-700/30 cursor-not-allowed'
+                            : 'bg-gray-100 text-gray-600 border border-gray-200 cursor-not-allowed'
                         }`}
                       >
                         <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

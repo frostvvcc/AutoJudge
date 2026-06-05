@@ -27,19 +27,19 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 flex">
+    <div className="min-h-screen bg-gray-50 flex">
       {/* Left: Brand panel (hidden on mobile) */}
-      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-gray-900 to-gray-950 items-center justify-center p-12">
+      <div className="hidden lg:flex lg:w-1/2 bg-gradient-to-br from-gray-100 to-gray-100 items-center justify-center p-12">
         <div className="max-w-md">
           <div className="flex items-center gap-3 mb-8">
             <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-              <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <svg className="w-5 h-5 text-gray-900" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5" />
               </svg>
             </div>
-            <span className="text-2xl font-bold text-white">AutoJudge</span>
+            <span className="text-2xl font-bold text-gray-900">AutoJudge</span>
           </div>
-          <h2 className="text-3xl font-bold text-white leading-tight mb-4">
+          <h2 className="text-3xl font-bold text-gray-900 leading-tight mb-4">
             让 AI 替你做
             <br />
             <span className="bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
@@ -70,20 +70,20 @@ export default function LoginPage() {
           <div className="lg:hidden text-center mb-8">
             <div className="inline-flex items-center gap-3 mb-3">
               <div className="w-9 h-9 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
-                <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <svg className="w-4 h-4 text-gray-900" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5" />
                 </svg>
               </div>
-              <h1 className="text-xl font-bold text-white">AutoJudge</h1>
+              <h1 className="text-xl font-bold text-gray-900">AutoJudge</h1>
             </div>
             <p className="text-sm text-gray-500">AI 驱动的多维代码审查引擎</p>
           </div>
 
           <form
             onSubmit={handleSubmit}
-            className="bg-gray-900 border border-gray-800 rounded-xl p-6 space-y-5"
+            className="bg-white border border-gray-200 rounded-xl p-6 space-y-5"
           >
-            <h2 className="text-xl font-semibold text-white text-center">登录</h2>
+            <h2 className="text-xl font-semibold text-gray-900 text-center">登录</h2>
 
             {error && (
               <div className="bg-red-900/30 border border-red-800 rounded-lg px-4 py-3 flex items-start gap-2">
@@ -104,7 +104,7 @@ export default function LoginPage() {
                 autoComplete="username"
                 value={loginStr}
                 onChange={(e) => setLoginStr(e.target.value)}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 transition-all"
+                className="w-full bg-gray-100 border border-gray-300 rounded-lg px-4 py-2.5 text-sm text-gray-800 placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 transition-all"
                 placeholder="请输入用户名或邮箱"
                 required
               />
@@ -121,14 +121,14 @@ export default function LoginPage() {
                   autoComplete="current-password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-2.5 pr-10 text-sm text-gray-100 placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 transition-all"
+                  className="w-full bg-gray-100 border border-gray-300 rounded-lg px-4 py-2.5 pr-10 text-sm text-gray-800 placeholder-gray-500 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 transition-all"
                   placeholder="请输入密码"
                   required
                 />
                 <button
                   type="button"
                   onClick={() => setShowPw(!showPw)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-600 transition-colors"
                   tabIndex={-1}
                 >
                   {showPw ? (
@@ -148,7 +148,7 @@ export default function LoginPage() {
             <button
               type="submit"
               disabled={loading || !loginStr || !password}
-              className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 rounded-lg text-sm font-medium transition-colors text-white flex items-center justify-center gap-2"
+              className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-200 disabled:text-gray-500 rounded-lg text-sm font-medium transition-colors text-white flex items-center justify-center gap-2"
             >
               {loading && (
                 <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />

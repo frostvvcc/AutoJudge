@@ -68,7 +68,7 @@ export default function TaskCenter() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-950">
+    <div className="min-h-screen bg-gray-50">
       <NavBar />
 
       <main className="max-w-4xl mx-auto px-4 sm:px-6 py-6 sm:py-8 space-y-6">
@@ -92,29 +92,29 @@ export default function TaskCenter() {
 
         {/* Welcome */}
         <div>
-          <h2 className="text-lg font-semibold text-white">
+          <h2 className="text-lg font-semibold text-gray-900">
             欢迎回来，{user?.username}
           </h2>
           <p className="text-sm text-gray-500 mt-1">描述你的编码需求，AI Agent 会从安全、性能、正确性三个维度审查优化</p>
         </div>
 
         {/* New task form */}
-        <form onSubmit={handleSubmit} className="bg-gray-900 rounded-xl border border-gray-800 overflow-hidden">
+        <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <textarea
             value={task}
             onChange={(e) => setTask(e.target.value)}
             placeholder="描述你的编码需求..."
-            className="w-full bg-transparent px-5 py-4 text-sm text-gray-100 placeholder-gray-500 resize-none focus:outline-none"
+            className="w-full bg-transparent px-5 py-4 text-sm text-gray-800 placeholder-gray-500 resize-none focus:outline-none"
             rows={4}
             disabled={isRunning}
           />
-          <div className="flex items-center justify-between px-5 py-3 border-t border-gray-800 bg-gray-800/20">
+          <div className="flex items-center justify-between px-5 py-3 border-t border-gray-200 bg-gray-50">
             <div className="flex items-center gap-3">
               <label className="text-xs text-gray-500">语言</label>
               <select
                 value={language}
                 onChange={(e) => setLanguage(e.target.value)}
-                className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-gray-100 focus:outline-none focus:border-blue-500"
+                className="bg-gray-100 border border-gray-300 rounded-lg px-3 py-1.5 text-sm text-gray-800 focus:outline-none focus:border-blue-500"
                 disabled={isRunning}
               >
                 {LANGUAGE_GROUPS.map((group) => (
@@ -134,7 +134,7 @@ export default function TaskCenter() {
             <button
               type="submit"
               disabled={isRunning || task.trim().length < 10}
-              className="px-6 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 rounded-lg text-sm font-medium text-white transition-colors flex items-center gap-2"
+              className="px-6 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-200 disabled:text-gray-500 rounded-lg text-sm font-medium text-white transition-colors flex items-center gap-2"
             >
               {isRunning ? (
                 <>
@@ -157,10 +157,10 @@ export default function TaskCenter() {
                 key={ex.title}
                 onClick={() => handleUseExample(ex)}
                 disabled={isRunning}
-                className="text-left bg-gray-900 border border-gray-800 rounded-lg p-4 hover:border-gray-700 hover:bg-gray-800/50 transition-colors disabled:opacity-50 group"
+                className="text-left bg-white border border-gray-200 rounded-lg p-4 hover:border-gray-300 hover:bg-gray-50 transition-colors disabled:opacity-50 group"
               >
                 <div className="text-lg mb-2">{ex.icon}</div>
-                <div className="text-sm font-medium text-white mb-1">{ex.title}</div>
+                <div className="text-sm font-medium text-gray-900 mb-1">{ex.title}</div>
                 <div className="text-xs text-gray-500 line-clamp-2 leading-relaxed">{ex.desc}</div>
                 <div className="mt-2 text-xs text-gray-600 group-hover:text-blue-400 transition-colors">
                   {ex.lang}
@@ -205,13 +205,13 @@ export default function TaskCenter() {
                 <Link
                   key={item.sid}
                   to={`/workspace/${item.sid}`}
-                  className="block bg-gray-900 border border-gray-800 rounded-lg px-4 py-3 hover:border-gray-700 transition-colors"
+                  className="block bg-white border border-gray-200 rounded-lg px-4 py-3 hover:border-gray-300 transition-colors"
                 >
                   <div className="flex items-center justify-between gap-4">
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm text-gray-200 truncate">{item.task}</p>
+                      <p className="text-sm text-gray-700 truncate">{item.task}</p>
                       <div className="flex items-center gap-3 mt-1.5 text-xs text-gray-500">
-                        <span className="px-1.5 py-0.5 bg-gray-800 rounded text-gray-400">{item.language}</span>
+                        <span className="px-1.5 py-0.5 bg-gray-100 rounded text-gray-400">{item.language}</span>
                         {item.converged ? (
                           <span className="text-green-400">共识达成</span>
                         ) : (
@@ -234,10 +234,10 @@ export default function TaskCenter() {
 
 function StatCard({ icon, value, label }: { icon: string; value: string; label: string }) {
   return (
-    <div className="bg-gray-900 border border-gray-800 rounded-lg p-4">
+    <div className="bg-white border border-gray-200 rounded-lg p-4">
       <div className="flex items-center gap-2 mb-1">
         <span className="text-sm">{icon}</span>
-        <span className="text-lg font-bold text-white">{value}</span>
+        <span className="text-lg font-bold text-gray-900">{value}</span>
       </div>
       <div className="text-xs text-gray-500">{label}</div>
     </div>

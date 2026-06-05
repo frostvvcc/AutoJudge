@@ -28,7 +28,7 @@ export default function RoundTimeline({
                     ? 'bg-green-500/20 border-green-500'
                     : isCurrent
                       ? 'bg-blue-500/20 border-blue-500 ring-4 ring-blue-500/20'
-                      : 'bg-gray-800 border-gray-700'
+                      : 'bg-gray-100 border-gray-300'
                 }`}
               >
                 {isCompleted ? (

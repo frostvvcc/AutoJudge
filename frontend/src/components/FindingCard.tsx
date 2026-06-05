@@ -11,7 +11,7 @@ const SEVERITY_STYLES: Record<Finding['severity'], string> = {
   critical: 'bg-red-900/50 text-red-400 border-red-700',
   high: 'bg-orange-900/50 text-orange-400 border-orange-700',
   medium: 'bg-yellow-900/50 text-yellow-400 border-yellow-700',
-  low: 'bg-gray-800 text-gray-400 border-gray-700',
+  low: 'bg-gray-100 text-gray-400 border-gray-300',
 };
 
 const SEVERITY_DOT: Record<Finding['severity'], string> = {
@@ -32,7 +32,7 @@ export default function FindingCard({ finding }: Props) {
   const dotClass = SEVERITY_DOT[finding.severity];
 
   return (
-    <div className="bg-gray-900 rounded-lg border border-gray-800">
+    <div className="bg-white rounded-lg border border-gray-200">
       <button
         type="button"
         className="w-full p-3 flex items-start gap-3 text-left"
@@ -49,7 +49,7 @@ export default function FindingCard({ finding }: Props) {
             </span>
             <span className="text-xs text-gray-500">{finding.category}</span>
           </div>
-          <p className="text-sm text-gray-300 leading-relaxed truncate">
+          <p className="text-sm text-gray-600 leading-relaxed truncate">
             {finding.description}
           </p>
         </div>
@@ -60,8 +60,8 @@ export default function FindingCard({ finding }: Props) {
       </button>
 
       {expanded && (
-        <div className="px-3 pb-3 pt-0 border-t border-gray-800">
-          <p className="text-sm text-gray-300 whitespace-pre-wrap leading-relaxed mt-3">
+        <div className="px-3 pb-3 pt-0 border-t border-gray-200">
+          <p className="text-sm text-gray-600 whitespace-pre-wrap leading-relaxed mt-3">
             {finding.description}
           </p>
           {finding.test_input && (
@@ -69,7 +69,7 @@ export default function FindingCard({ finding }: Props) {
               <span className="text-xs text-gray-500 font-medium">
                 Test Input
               </span>
-              <pre className="mt-1 p-2 bg-gray-950 rounded text-xs text-gray-400 overflow-x-auto">
+              <pre className="mt-1 p-2 bg-gray-50 rounded text-xs text-gray-400 overflow-x-auto">
                 {finding.test_input}
               </pre>
             </div>

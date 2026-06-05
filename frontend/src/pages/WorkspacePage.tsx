@@ -59,7 +59,7 @@ export default function WorkspacePage() {
   // Replay loading/error states
   if (!isLive && replayLoading) {
     return (
-      <div className="min-h-screen bg-gray-950">
+      <div className="min-h-screen bg-gray-50">
         <NavBar />
         <div className="flex items-center justify-center py-20">
           <div className="text-gray-500">加载历史记录...</div>
@@ -69,7 +69,7 @@ export default function WorkspacePage() {
   }
   if (!isLive && (replayError || !replayData)) {
     return (
-      <div className="min-h-screen bg-gray-950">
+      <div className="min-h-screen bg-gray-50">
         <NavBar />
         <div className="flex flex-col items-center justify-center py-20 gap-4">
           <p className="text-red-400">{replayError || '记录不存在'}</p>
@@ -186,19 +186,19 @@ export default function WorkspacePage() {
   const isDone = status === 'done' || status === 'converged';
 
   return (
-    <div className="min-h-screen bg-gray-950">
+    <div className="min-h-screen bg-gray-50">
       <NavBar />
 
       <main className="max-w-7xl mx-auto px-6 py-4 space-y-4">
         {/* Replay badge */}
         {isReplay && (
-          <div className="flex items-center gap-3 px-4 py-2.5 bg-gray-800/50 rounded-lg border border-gray-700/50">
+          <div className="flex items-center gap-3 px-4 py-2.5 bg-gray-50 rounded-lg border border-gray-200">
             <svg className="w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
             </svg>
             <span className="text-sm text-gray-400">历史回放</span>
             {taskDescription && (
-              <span className="text-sm text-gray-300 truncate">{taskDescription}</span>
+              <span className="text-sm text-gray-600 truncate">{taskDescription}</span>
             )}
             <span className="text-xs text-gray-600 ml-auto">{language}</span>
           </div>
@@ -276,7 +276,7 @@ export default function WorkspacePage() {
             </button>
             <button
               onClick={() => navigate('/history')}
-              className="px-6 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-sm text-gray-300 transition-colors"
+              className="px-6 py-2 bg-gray-100 hover:bg-gray-100 rounded-lg text-sm text-gray-600 transition-colors"
             >
               历史记录
             </button>
@@ -288,7 +288,7 @@ export default function WorkspacePage() {
             <p className="text-red-400 text-sm">{debate.error}</p>
             <button
               onClick={() => { debate.reset(); navigate('/dashboard'); }}
-              className="shrink-0 ml-4 px-4 py-1.5 bg-gray-800 hover:bg-gray-700 rounded text-sm text-gray-300"
+              className="shrink-0 ml-4 px-4 py-1.5 bg-gray-100 hover:bg-gray-100 rounded text-sm text-gray-600"
             >
               重试
             </button>

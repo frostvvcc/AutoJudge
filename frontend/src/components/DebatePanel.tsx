@@ -28,16 +28,16 @@ export default function DebatePanel({ messages, currentRound, status, statusText
   );
 
   return (
-    <div className="bg-gray-900 rounded-lg border border-gray-800 max-h-[600px] overflow-y-auto">
+    <div className="bg-white rounded-lg border border-gray-200 max-h-[600px] overflow-y-auto">
       <div className="p-4 space-y-4">
         {Object.entries(groupedByRound).map(([round, msgs]) => (
           <div key={round}>
             <div className="flex items-center gap-2 mb-3">
-              <div className="h-px flex-1 bg-gray-800" />
+              <div className="h-px flex-1 bg-gray-100" />
               <span className="text-xs text-gray-500 font-medium">
                 Round {round}
               </span>
-              <div className="h-px flex-1 bg-gray-800" />
+              <div className="h-px flex-1 bg-gray-100" />
             </div>
 
             <div className="space-y-3">
@@ -91,7 +91,7 @@ function MessageBubble({ message }: { message: DebateMessage }) {
     <div className={`border-l-2 ${colorClass} rounded-r-lg p-3`}>
       <div className="flex items-center gap-2 mb-1.5">
         <div className={`w-2 h-2 rounded-full ${dotClass}`} />
-        <span className="text-xs font-semibold text-gray-300">{label}</span>
+        <span className="text-xs font-semibold text-gray-600">{label}</span>
         {isRebuttal && (
           <span className="text-xs px-1.5 py-0.5 bg-yellow-900/50 text-yellow-400 rounded">
             反驳
@@ -104,13 +104,13 @@ function MessageBubble({ message }: { message: DebateMessage }) {
         )}
       </div>
       <div
-        className={`text-sm text-gray-300 leading-relaxed prose prose-invert prose-sm max-w-none ${
+        className={`text-sm text-gray-600 leading-relaxed prose prose-sm max-w-none ${
           isLong && !expanded ? 'max-h-[200px] overflow-hidden relative' : ''
         }`}
       >
         <ReactMarkdown>{content}</ReactMarkdown>
         {isLong && !expanded && (
-          <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-gray-900/90 to-transparent" />
+          <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-gray-100/90 to-transparent" />
         )}
       </div>
       {isLong && (

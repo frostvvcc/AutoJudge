@@ -44,7 +44,7 @@ export default function RealtimeDashboard({ messages, risk, metrics }: Props) {
   }
 
   return (
-    <div className="bg-gray-900 rounded-lg border border-gray-800 p-4 space-y-4">
+    <div className="bg-white rounded-lg border border-gray-200 p-4 space-y-4">
       <h3 className="text-sm font-medium text-gray-400">实时状态</h3>
 
       {/* Attacker status */}
@@ -66,7 +66,7 @@ export default function RealtimeDashboard({ messages, risk, metrics }: Props) {
 
       {/* Risk assessment */}
       {risk && (
-        <div className="space-y-2 pt-2 border-t border-gray-800">
+        <div className="space-y-2 pt-2 border-t border-gray-200">
           <h4 className="text-xs text-gray-500">风险评级</h4>
           {(['security', 'performance', 'correctness'] as const).map((dim) => {
             const level = risk[dim] || 'unknown';
@@ -82,22 +82,22 @@ export default function RealtimeDashboard({ messages, risk, metrics }: Props) {
 
       {/* Metrics */}
       {metrics && (
-        <div className="grid grid-cols-2 gap-2 pt-2 border-t border-gray-800">
-          <div className="bg-gray-800/50 rounded px-2 py-1.5">
+        <div className="grid grid-cols-2 gap-2 pt-2 border-t border-gray-200">
+          <div className="bg-gray-50 rounded px-2 py-1.5">
             <div className="text-xs text-gray-500">轮次</div>
-            <div className="text-sm font-medium text-gray-200">{metrics.total_rounds}</div>
+            <div className="text-sm font-medium text-gray-700">{metrics.total_rounds}</div>
           </div>
-          <div className="bg-gray-800/50 rounded px-2 py-1.5">
+          <div className="bg-gray-50 rounded px-2 py-1.5">
             <div className="text-xs text-gray-500">Token</div>
-            <div className="text-sm font-medium text-gray-200">{(metrics.total_tokens / 1000).toFixed(1)}k</div>
+            <div className="text-sm font-medium text-gray-700">{(metrics.total_tokens / 1000).toFixed(1)}k</div>
           </div>
-          <div className="bg-gray-800/50 rounded px-2 py-1.5">
+          <div className="bg-gray-50 rounded px-2 py-1.5">
             <div className="text-xs text-gray-500">耗时</div>
-            <div className="text-sm font-medium text-gray-200">{(metrics.total_latency_ms / 1000).toFixed(1)}s</div>
+            <div className="text-sm font-medium text-gray-700">{(metrics.total_latency_ms / 1000).toFixed(1)}s</div>
           </div>
-          <div className="bg-gray-800/50 rounded px-2 py-1.5">
+          <div className="bg-gray-50 rounded px-2 py-1.5">
             <div className="text-xs text-gray-500">费用</div>
-            <div className="text-sm font-medium text-gray-200">${metrics.cost_usd.toFixed(2)}</div>
+            <div className="text-sm font-medium text-gray-700">${metrics.cost_usd.toFixed(2)}</div>
           </div>
         </div>
       )}

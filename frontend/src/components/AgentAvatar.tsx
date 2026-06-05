@@ -40,7 +40,7 @@ export default function AgentAvatar({ agent, size = 'md' }: Props) {
   return (
     <div className="flex items-center gap-2">
       <div
-        className={`${s.wrapper} rounded-full ring-2 ${ringClass} bg-gray-800 flex items-center justify-center`}
+        className={`${s.wrapper} rounded-full ring-2 ${ringClass} bg-gray-100 flex items-center justify-center`}
       >
         <span className={`${s.text} font-semibold ${textClass}`}>
           {initial}
@@ -48,7 +48,7 @@ export default function AgentAvatar({ agent, size = 'md' }: Props) {
       </div>
       <div className="flex items-center gap-1.5">
         <div className={`${s.dot} rounded-full ${dotClass}`} />
-        <span className={`${s.text} text-gray-300 font-medium`}>{label}</span>
+        <span className={`${s.text} text-gray-600 font-medium`}>{label}</span>
       </div>
     </div>
   );

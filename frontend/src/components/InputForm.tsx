@@ -19,7 +19,7 @@ export default function InputForm({ onSubmit, disabled }: Props) {
   };
 
   return (
-    <form onSubmit={handleSubmit} className="bg-gray-900 rounded-lg border border-gray-800 p-4">
+    <form onSubmit={handleSubmit} className="bg-white rounded-lg border border-gray-200 p-4">
       <div className="flex gap-3">
         <div className="flex-1">
           <textarea
@@ -28,7 +28,7 @@ export default function InputForm({ onSubmit, disabled }: Props) {
             value={task}
             onChange={(e) => setTask(e.target.value)}
             placeholder="描述你的编码需求... (如: 实现用户注册接口，邮箱唯一，密码哈希存储)"
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-4 py-3 text-sm text-gray-100 placeholder-gray-500 resize-none focus:outline-none focus:border-blue-500"
+            className="w-full bg-gray-100 border border-gray-300 rounded-lg px-4 py-3 text-sm text-gray-800 placeholder-gray-500 resize-none focus:outline-none focus:border-blue-500"
             rows={2}
             disabled={disabled}
           />
@@ -43,7 +43,7 @@ export default function InputForm({ onSubmit, disabled }: Props) {
             aria-label="编程语言"
             value={language}
             onChange={(e) => setLanguage(e.target.value)}
-            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-100 focus:outline-none focus:border-blue-500"
+            className="bg-gray-100 border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-800 focus:outline-none focus:border-blue-500"
             disabled={disabled}
           >
             {LANGUAGES.map((lang) => (
@@ -55,7 +55,7 @@ export default function InputForm({ onSubmit, disabled }: Props) {
           <button
             type="submit"
             disabled={disabled || task.trim().length < 10}
-            className="px-6 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-700 disabled:text-gray-500 rounded-lg text-sm font-medium transition-colors"
+            className="px-6 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-200 disabled:text-gray-500 rounded-lg text-sm font-medium transition-colors"
           >
             {disabled ? (
               <span className="flex items-center justify-center gap-1.5">

@@ -18,7 +18,7 @@ export default function CodeEditor({ code, language }: Props) {
 
   if (!code) {
     return (
-      <div className="bg-gray-900 rounded-lg border border-gray-800 p-5">
+      <div className="bg-white rounded-lg border border-gray-200 p-5">
         <div className="flex items-center gap-2 mb-3">
           <svg className="w-4 h-4 text-gray-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5" />
@@ -38,8 +38,8 @@ export default function CodeEditor({ code, language }: Props) {
   const lineCount = code.split('\n').length;
 
   return (
-    <div className="bg-gray-900 rounded-lg border border-gray-800 overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-800 bg-gray-800/30">
+    <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
+      <div className="flex items-center justify-between px-4 py-2.5 border-b border-gray-200 bg-gray-50">
         <div className="flex items-center gap-2">
           <div className="flex gap-1">
             <div className="w-2.5 h-2.5 rounded-full bg-red-500/60" />
@@ -52,7 +52,7 @@ export default function CodeEditor({ code, language }: Props) {
         </div>
         <button
           onClick={handleCopy}
-          className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-300 transition-colors px-2 py-1 rounded hover:bg-gray-800"
+          className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-600 transition-colors px-2 py-1 rounded hover:bg-gray-100"
         >
           {copied ? (
             <>
