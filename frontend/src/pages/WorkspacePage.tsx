@@ -52,7 +52,7 @@ export default function WorkspacePage() {
 
   // Live mode: if idle and not live URL, redirect to home
   if (isLive && debate.status === 'idle') {
-    navigate('/');
+    navigate('/dashboard');
     return null;
   }
 
@@ -268,7 +268,7 @@ export default function WorkspacePage() {
             <button
               onClick={() => {
                 if (!isReplay) debate.reset();
-                navigate('/');
+                navigate('/dashboard');
               }}
               className="px-6 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium text-white transition-colors"
             >
@@ -287,7 +287,7 @@ export default function WorkspacePage() {
           <div className="bg-red-900/30 border border-red-800 rounded-lg p-4 flex items-center justify-between">
             <p className="text-red-400 text-sm">{debate.error}</p>
             <button
-              onClick={() => { debate.reset(); navigate('/'); }}
+              onClick={() => { debate.reset(); navigate('/dashboard'); }}
               className="shrink-0 ml-4 px-4 py-1.5 bg-gray-800 hover:bg-gray-700 rounded text-sm text-gray-300"
             >
               重试

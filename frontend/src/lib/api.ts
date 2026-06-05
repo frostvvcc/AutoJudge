@@ -8,6 +8,8 @@ class ApiError extends Error {
   }
 }
 
+const AUTH_PATHS = ['/auth/login', '/auth/register', '/auth/refresh'];
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = localStorage.getItem('access_token');
   const headers: Record<string, string> = {
@@ -20,7 +22,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   const res = await fetch(`${API_BASE}${path}`, { ...options, headers });
 
-  if (res.status === 401) {
+  if (res.status === 401 && !AUTH_PATHS.some((p) => path.startsWith(p))) {
     const refreshed = await tryRefreshToken();
     if (refreshed) {
       headers['Authorization'] = `Bearer ${localStorage.getItem('access_token')}`;
@@ -108,6 +110,13 @@ export async function changePassword(oldPassword: string, newPassword: string): 
   await request('/auth/change-password', {
     method: 'POST',
     body: JSON.stringify({ old_password: oldPassword, new_password: newPassword }),
+  });
+}
+
+export async function updateProfile(username: string): Promise<void> {
+  await request('/auth/me', {
+    method: 'PUT',
+    body: JSON.stringify({ username }),
   });
 }
 

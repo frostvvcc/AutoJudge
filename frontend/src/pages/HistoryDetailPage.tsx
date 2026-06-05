@@ -73,14 +73,14 @@ export default function HistoryDetailPage() {
       <header className="border-b border-gray-800 px-6 py-4">
         <div className="flex items-center justify-between max-w-7xl mx-auto">
           <div className="flex items-center gap-3">
-            <Link to="/" className="flex items-center gap-3">
+            <Link to="/dashboard" className="flex items-center gap-3">
               <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg" />
               <h1 className="text-xl font-bold text-white">AutoJudge</h1>
             </Link>
           </div>
           <div className="flex items-center gap-4">
             <Link
-              to="/"
+              to="/dashboard"
               className="text-sm text-gray-400 hover:text-white transition-colors"
             >
               新任务
