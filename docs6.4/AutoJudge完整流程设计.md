@@ -85,8 +85,10 @@
   │  写完后 Coder 自测（不需要外部 TestRunner）：              │
   │  1. 调 run_code_snippet 执行代码（底层是 Docker 沙箱）    │
   │  2. 构造测试用例（正常路径 + 边界情况）                   │
-  │  3. 不通过？自己修再测（max_tool_turns=5）                │
-  │  4. 通过后才 submit_response 提交                        │
+  │  3. 不通过？自己修再测（max_tool_turns=10）                │
+  │  4. 最后一轮 tool_choice 强制为 submit_response           │
+  │     → 保证一定交出代码，不会因自测耗尽轮次而丢失代码      │
+  │  5. 通过后才 submit_response 提交                        │
   │                                                          │
   │  提交内容：                                               │
   │  · message: 设计思路说明                                  │
@@ -204,6 +206,10 @@
               │   │  · Attacker stance=attacking 的 findings │
               │   │  · Coder 反驳但 Attacker 不认可的         │
               │   │  · 未被修复的问题                         │
+              │   │                                          │
+              │   │  特殊处理：stance=attacking 但 findings   │
+              │   │  为空时，合成一条争议（取 message 内容）   │
+              │   │  → 防止攻击者有顾虑但未结构化输出时被忽略  │
               │   │                                          │
               │   │  没有争议？→ 等效收敛，跳到 PHASE 6       │
               │   └──────────────────┬───────────────────────┘
@@ -701,7 +707,7 @@ coder ──→ security    ┐
 | 方案数量 | 每批 2 个 | 对比清晰不过载 |
 | Plan Phase 对话上限 | 7 轮（3温和/5强引导/7硬上限） | 防止方案阶段死循环 |
 | 辩论最大轮次 | max_rounds=5（默认） | 可由 ComplexityRouter 调整 |
-| Coder 自测轮次 | max_tool_turns=5 | test→fix→test→fix→submit |
+| Coder 自测轮次 | max_tool_turns=10，最后一轮强制 submit_response | 充足自测空间 + 保证代码不丢失 |
 | 修复策略多样化 | 第 1 次失败就换角度 | LLM 重试同一思路无效 |
 | Arbitrator 替代方案 | 最多给 2 次 | 第3次失败用当前最好版本 |
 | 版本回退条件 | 仅 regression | 修复把原来好的改坏了才回退 |
@@ -903,10 +909,39 @@ Agent 编排流程  → LangGraph StateGraph（add_node + add_edge + conditional
 用户交互暂停   → LangGraph interrupt（暂停图执行 → WebSocket → 恢复）
 状态持久化     → LangGraph MySQL checkpoint（自动保存/恢复）
 实时推送       → FastAPI WebSocket（on_progress 回调 → send_json）
+LLM 通信       → SSE 流式请求（httpx.stream → 逐行解析 Server-Sent Events）
+模型路由       → 轻量任务 Haiku / 重型任务 Opus（model_router 按 agent 分配）
 代码执行       → Docker 沙箱（run_code_snippet → 隔离容器）
 语义检索       → ChromaDB（cosine similarity + HNSW 索引）
 系统评估       → Agent System Evaluation（pass@1 对比 + 仲裁准确率 + 消融实验）
 ```
+
+### LLM 通信架构
+
+**SSE 流式请求**：所有 LLM 调用使用 Server-Sent Events 流式传输（`stream: true`），而非等待完整响应。核心函数 `_stream_anthropic_sse()` 逐行解析 SSE 事件（`message_start` → `content_block_delta` → `message_delta`），实时拼装为完整响应。这样做的原因：
+
+- CDN/反向代理通常有 100 秒空闲连接超时，Opus 等大模型的推理时间经常超过此限制
+- 流式传输保持连接上有持续数据流动，CDN 不会判定超时
+- 同时为后续实现前端实时 token 流（打字机效果）提供基础
+
+**模型路由策略**（`model_router.py`）：
+
+| Agent | 模型 | 理由 |
+|-------|------|------|
+| planner, cross_review, compressor, test_generator | Haiku | 轻量任务，低延迟低成本 |
+| coder | Haiku | 代码生成速度优先，通过多轮自测保证质量 |
+| security, performance, correctness | Opus（DEFAULT_MODEL） | 攻击者需要深度分析能力才能发现非显式问题 |
+| judge, arbitrator | Opus（DEFAULT_MODEL） | 裁决需要全面理解上下文 |
+
+**Token 预算**（`BudgetManager`）：
+
+| 参数 | 值 | 说明 |
+|------|---|------|
+| budget_total | 500,000 | 单次辩论总 token 上限 |
+| coder | 64,000 / 次 | 含代码 + 自测输出 |
+| attacker | 32,000 / 次 | 深度审查需要充足空间 |
+| judge / arbitrator | 32,000 / 次 | 裁决报告 |
+| cross_review | 16,000 / 次 | 交叉审阅 |
 
 ### 简历亮点技术（精简后 1 项核心 + TypeScript 加强）
 
