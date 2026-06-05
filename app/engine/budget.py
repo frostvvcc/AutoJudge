@@ -12,13 +12,13 @@ class BudgetManager:
         self.spent = 0
         self.by_agent: dict[str, int] = {}
         self.agent_limits = {
-            "coder": 4000,
-            "security": 2000,
-            "performance": 2000,
-            "correctness": 2000,
-            "cross_review": 1000,
-            "judge": 3000,
-            "arbitrator": 3000,
+            "coder": 64000,
+            "security": 32000,
+            "performance": 32000,
+            "correctness": 32000,
+            "cross_review": 16000,
+            "judge": 32000,
+            "arbitrator": 32000,
         }
         self.cache_stats = {"read": 0, "creation": 0}
         self._latency_ms = 0

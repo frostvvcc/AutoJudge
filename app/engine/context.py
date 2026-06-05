@@ -19,7 +19,7 @@ class DebateConfig:
         default_factory=lambda: ["security", "performance", "correctness"]
     )
     model: str = "claude-sonnet-4-20250514"
-    max_tokens: int = 100_000
+    max_tokens: int = 500_000
     skip_cross_review: bool = False
 
 

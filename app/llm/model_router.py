@@ -4,7 +4,7 @@ from app.config import settings
 
 MODEL_ROUTING = {
     "requirement_parser": settings.haiku_model,
-    "coder": settings.default_model,
+    "coder": settings.haiku_model,
     "security": settings.default_model,
     "performance": settings.default_model,
     "correctness": settings.default_model,

@@ -348,7 +348,93 @@ async def _call_anthropic_api(
 
 
 
-# ─── Backend 3: Anthropic-compatible proxy (httpx direct) ──────────────────
+# ─── Backend 3: Anthropic-compatible proxy (SSE streaming) ──────────────────
+
+async def _stream_anthropic_sse(http, url: str, headers: dict, body: dict) -> dict:
+    """Send a streaming request and reassemble SSE chunks into a full response."""
+    body["stream"] = True
+    content_blocks: list[dict] = []
+    current_block: dict | None = None
+    input_tokens = 0
+    output_tokens = 0
+    cache_read = 0
+    cache_creation = 0
+    stop_reason = None
+
+    async with http.stream("POST", url, headers=headers, json=body) as resp:
+        if resp.status_code != 200:
+            error_body = ""
+            async for chunk in resp.aiter_text():
+                error_body += chunk
+                if len(error_body) > 300:
+                    break
+            raise RuntimeError(f"Proxy API error {resp.status_code}: {error_body[:300]}")
+
+        async for line in resp.aiter_lines():
+            if not line.startswith("data: "):
+                continue
+            payload = line[6:]
+            if payload.strip() == "[DONE]":
+                break
+            try:
+                event = json.loads(payload)
+            except json.JSONDecodeError:
+                continue
+
+            etype = event.get("type", "")
+
+            if etype == "message_start":
+                msg = event.get("message", {})
+                usage = msg.get("usage", {})
+                input_tokens += usage.get("input_tokens", 0)
+                cache_read += usage.get("cache_read_input_tokens", 0)
+                cache_creation += usage.get("cache_creation_input_tokens", 0)
+
+            elif etype == "content_block_start":
+                block = event.get("content_block", {})
+                current_block = dict(block)
+                if block.get("type") == "tool_use":
+                    current_block.setdefault("input", {})
+                    current_block["_input_json"] = ""
+
+            elif etype == "content_block_delta":
+                delta = event.get("delta", {})
+                if current_block is None:
+                    continue
+                if delta.get("type") == "text_delta":
+                    current_block.setdefault("text", "")
+                    current_block["text"] += delta.get("text", "")
+                elif delta.get("type") == "input_json_delta":
+                    current_block["_input_json"] += delta.get("partial_json", "")
+
+            elif etype == "content_block_stop":
+                if current_block is not None:
+                    raw = current_block.pop("_input_json", "")
+                    if raw:
+                        try:
+                            current_block["input"] = json.loads(raw)
+                        except json.JSONDecodeError:
+                            current_block["input"] = {}
+                    content_blocks.append(current_block)
+                    current_block = None
+
+            elif etype == "message_delta":
+                delta = event.get("delta", {})
+                stop_reason = delta.get("stop_reason", stop_reason)
+                usage = event.get("usage", {})
+                output_tokens += usage.get("output_tokens", 0)
+
+    return {
+        "content": content_blocks,
+        "stop_reason": stop_reason,
+        "usage": {
+            "input_tokens": input_tokens,
+            "output_tokens": output_tokens,
+            "cache_read_input_tokens": cache_read,
+            "cache_creation_input_tokens": cache_creation,
+        },
+    }
+
 
 async def _call_anthropic_proxy(
     agent: str,
@@ -359,7 +445,7 @@ async def _call_anthropic_proxy(
     tools: list[dict] | None = None,
     tool_choice: dict | None = None,
 ) -> AgentResponse:
-    """Call Anthropic-compatible proxy via httpx (bypasses SDK header issues)."""
+    """Call Anthropic-compatible proxy via SSE streaming (avoids CDN timeout)."""
     import httpx
     from app.llm.model_router import get_model_for_agent
 
@@ -368,7 +454,6 @@ async def _call_anthropic_proxy(
     tool_choice = tool_choice or default_tool_choice
     resolved_model = model or get_model_for_agent(agent)
 
-    # Prompt caching: system prompt + tools with cache_control
     system_blocks = [
         {"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}
     ]
@@ -388,42 +473,46 @@ async def _call_anthropic_proxy(
     if tool_choice:
         body["tool_choice"] = tool_choice
 
+    url = f"{settings.anthropic_proxy_base_url}/v1/messages"
+    headers = {
+        "x-api-key": settings.anthropic_proxy_api_key,
+        "anthropic-version": "2023-06-01",
+        "Content-Type": "application/json",
+    }
+
     start = time.monotonic()
 
     conv_messages = list(messages)
     total_tokens = 0
-    max_tool_turns = 5 if agent == "coder" else 0
+    total_cache_read = 0
+    total_cache_creation = 0
+    max_tool_turns = 10 if agent == "coder" else 0
 
-    async with httpx.AsyncClient(timeout=300) as http:
+    async with httpx.AsyncClient(timeout=600) as http:
         for turn in range(max_tool_turns + 1):
             body["messages"] = conv_messages
-            effective_choice = {"type": "any"} if agent == "coder" else tool_choice
+            is_last_turn = (turn == max_tool_turns)
+            if agent == "coder":
+                effective_choice = (
+                    {"type": "tool", "name": "submit_response"}
+                    if is_last_turn
+                    else {"type": "any"}
+                )
+            else:
+                effective_choice = tool_choice
             if effective_choice:
                 body["tool_choice"] = effective_choice
 
-            resp = await http.post(
-                f"{settings.anthropic_proxy_base_url}/v1/messages",
-                headers={
-                    "x-api-key": settings.anthropic_proxy_api_key,
-                    "anthropic-version": "2023-06-01",
-                    "Content-Type": "application/json",
-                },
-                json=body,
-            )
+            data = await _stream_anthropic_sse(http, url, headers, body)
 
-            if resp.status_code != 200:
-                raise RuntimeError(f"Proxy API error {resp.status_code}: {resp.text[:300]}")
-
-            data = resp.json()
             usage = data.get("usage", {})
             total_tokens += usage.get("input_tokens", 0) + usage.get("output_tokens", 0)
-            total_cache_read = usage.get("cache_read_input_tokens", 0)
-            total_cache_creation = usage.get("cache_creation_input_tokens", 0)
+            total_cache_read += usage.get("cache_read_input_tokens", 0)
+            total_cache_creation += usage.get("cache_creation_input_tokens", 0)
 
             if agent != "coder" or data.get("stop_reason") != "tool_use":
                 break
 
-            # Coder tool_use loop
             pending_tool_calls = []
             has_submit = False
             for block in data.get("content", []):
@@ -449,7 +538,6 @@ async def _call_anthropic_proxy(
 
     elapsed_ms = int((time.monotonic() - start) * 1000)
 
-    # Parse response
     content_text = ""
     structured = None
     code = None
@@ -463,6 +551,23 @@ async def _call_anthropic_proxy(
                 content_text = structured["message"]
             if "updated_code" in structured:
                 code = structured["updated_code"]
+
+    if code is None and agent == "coder":
+        for msg in reversed(conv_messages):
+            if msg.get("role") != "assistant":
+                continue
+            for block in (msg.get("content") or []):
+                if isinstance(block, dict) and block.get("type") == "tool_use":
+                    inp = block.get("input", {})
+                    if block.get("name") == "submit_response" and inp.get("updated_code"):
+                        code = inp["updated_code"]
+                        structured = inp
+                        break
+                    if block.get("name") == "run_code_snippet" and inp.get("code"):
+                        code = inp["code"]
+                        break
+            if code:
+                break
 
     return AgentResponse(
         agent=agent,

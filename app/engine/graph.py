@@ -514,13 +514,23 @@ def _extract_unresolved_disputes(state: DebateState) -> list[dict]:
                 continue
             if structured.get("stance") != "attacking":
                 continue
-            for finding in structured.get("findings", []):
+            findings = structured.get("findings", [])
+            if findings:
+                for finding in findings:
+                    disputes.append({
+                        "attacker": msg["agent"],
+                        "finding": finding.get("description", ""),
+                        "severity": finding.get("severity", "unknown"),
+                        "test_input": finding.get("test_input"),
+                        "coder_response": _find_coder_response(state, finding),
+                    })
+            else:
                 disputes.append({
                     "attacker": msg["agent"],
-                    "finding": finding.get("description", ""),
-                    "severity": finding.get("severity", "unknown"),
-                    "test_input": finding.get("test_input"),
-                    "coder_response": _find_coder_response(state, finding),
+                    "finding": structured.get("message", "Attacker 表示仍有顾虑但未提供具体 findings"),
+                    "severity": "medium",
+                    "test_input": None,
+                    "coder_response": "未回应",
                 })
     return disputes
 
