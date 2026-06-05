@@ -2,11 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import time
 import logging
-from typing import Any
-
-import numpy as np
 
 from app.api.models.response import DebateResult
 
@@ -14,13 +12,12 @@ logger = logging.getLogger(__name__)
 
 
 def cosine_similarity(a: list[float], b: list[float]) -> float:
-    a_arr = np.array(a)
-    b_arr = np.array(b)
-    dot = np.dot(a_arr, b_arr)
-    norm = np.linalg.norm(a_arr) * np.linalg.norm(b_arr)
-    if norm == 0:
+    dot = sum(x * y for x, y in zip(a, b))
+    norm_a = math.sqrt(sum(x * x for x in a))
+    norm_b = math.sqrt(sum(x * x for x in b))
+    if norm_a == 0 or norm_b == 0:
         return 0.0
-    return float(dot / norm)
+    return dot / (norm_a * norm_b)
 
 
 class ResultCache:

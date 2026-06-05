@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, Request, WebSocket, WebSocketDisconnect
@@ -13,7 +14,7 @@ from app.api.models.response import DebateResult
 from app.auth.deps import get_current_user
 from app.auth.jwt import decode_token
 from app.db.engine import async_session
-from app.db.models import DebateMessage as DBMessage, DebateSession, User
+from app.db.models import DebateMessage as DBMessage, DebateSession, DebateStatus, User
 from app.engine.context import DebateConfig
 from app.engine.degradation import DegradationManager
 from app.engine.resource_manager import ResourceManager
@@ -103,7 +104,7 @@ async def _save_session(
                 "model": config.model,
                 "max_tokens": config.max_tokens,
             },
-            status="done",
+            status=DebateStatus.COMPLETED.value,
             result_code=result.code or None,
             confidence=result.confidence,
             converged=result.converged,
@@ -185,6 +186,111 @@ async def generate(
     )
 
     return result
+
+
+@router.post("/generate/async")
+async def generate_async(
+    request: GenerateRequest,
+    user: User = Depends(get_current_user),
+):
+    """Enqueue a debate task for async processing via arq worker."""
+    config = DebateConfig(
+        max_rounds=request.config.max_rounds if request.config else 5,
+        attackers=(
+            request.config.attackers
+            if request.config
+            else ["security", "performance", "correctness"]
+        ),
+        model=(
+            request.config.model
+            if request.config
+            else "claude-sonnet-4-20250514"
+        ),
+        max_tokens=(
+            request.config.max_tokens if request.config else 100_000
+        ),
+    )
+
+    task_id = uuid.uuid4().hex
+
+    async with async_session() as db:
+        session = DebateSession(
+            sid=task_id,
+            user_id=user.id,
+            task=request.task,
+            language=request.language,
+            framework=request.framework,
+            config_json={
+                "max_rounds": config.max_rounds,
+                "attackers": config.attackers,
+                "model": config.model,
+                "max_tokens": config.max_tokens,
+            },
+            status=DebateStatus.QUEUED.value,
+        )
+        db.add(session)
+        await db.commit()
+
+    try:
+        from arq import create_pool as arq_create_pool
+        from app.queue.worker import _parse_redis_url
+        from app.config import settings
+
+        redis_pool = await arq_create_pool(_parse_redis_url(settings.redis_url))
+        await redis_pool.enqueue_job(
+            "run_debate_task",
+            task_id,
+            request.task,
+            request.language,
+            request.framework,
+            {
+                "max_rounds": config.max_rounds,
+                "attackers": config.attackers,
+                "model": config.model,
+                "max_tokens": config.max_tokens,
+            },
+            user.id,
+        )
+        await redis_pool.close()
+    except Exception as e:
+        logger.warning("arq_enqueue_failed error=%s, falling back to sync", e)
+        return await generate(request, user)
+
+    return {"task_id": task_id, "status": "queued"}
+
+
+@router.get("/task/{task_id}")
+async def get_task_status(
+    task_id: str,
+    user: User = Depends(get_current_user),
+):
+    """Poll task status for async-enqueued debates."""
+    async with async_session() as db:
+        result = await db.execute(
+            select(DebateSession).where(
+                DebateSession.sid == task_id,
+                DebateSession.user_id == user.id,
+            )
+        )
+        session = result.scalar_one_or_none()
+        if not session:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=404, detail="Task not found")
+
+        response = {
+            "task_id": task_id,
+            "status": session.status,
+            "created_at": session.created_at.isoformat() if session.created_at else None,
+        }
+
+        if session.status == DebateStatus.COMPLETED.value:
+            response["result_code"] = session.result_code
+            response["confidence"] = session.confidence
+            response["converged"] = session.converged
+            response["metrics"] = session.metrics_json
+            response["quality_report"] = session.quality_report_json
+
+        return response
 
 
 @router.websocket("/ws/generate")

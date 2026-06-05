@@ -12,10 +12,17 @@ from app.api.routes.generate import router as generate_router
 from app.api.routes.health import router as health_router
 from app.api.routes.history import router as history_router
 from app.config import settings
-from app.db.engine import engine
+from app.db.engine import engine, async_session
 from app.db.models import Base
-from app.db.redis import init_redis, close_redis, get_redis
+from app.db.redis import init_redis, close_redis
 from app.api.middleware.auth import AuthMiddleware
+from app.api.middleware.pipeline import (
+    RequestIDMiddleware,
+    StructuredLogMiddleware,
+    SecurityHeadersMiddleware,
+    ErrorHandlerMiddleware,
+    AuditLogMiddleware,
+)
 from app.mcp.client import close_code_analysis_client
 from app.tracing.tracer import setup_langsmith
 
@@ -39,8 +46,16 @@ async def lifespan(app: FastAPI):
     redis_client = await init_redis()
     _auth_middleware = AuthMiddleware(redis_client=redis_client)
 
+    from app.llm.key_pool import init_pool
+    async with async_session() as db:
+        await init_pool(db)
+
+    from app.scheduler.jobs import scheduler
+    scheduler.start()
+
     yield
 
+    scheduler.shutdown(wait=False)
     await close_code_analysis_client()
     await close_redis()
     await engine.dispose()
@@ -49,9 +64,17 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="AutoJudge",
     description="多维对抗式代码进化引擎",
-    version="0.3.0",
+    version="0.4.0",
     lifespan=lifespan,
 )
+
+# Middleware pipeline — modeled after AutoResearch's 9-layer chain.
+# Order: outermost (first added) runs first on request, last on response.
+app.add_middleware(AuditLogMiddleware)
+app.add_middleware(ErrorHandlerMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(StructuredLogMiddleware)
+app.add_middleware(RequestIDMiddleware)
 
 app.add_middleware(
     CORSMiddleware,

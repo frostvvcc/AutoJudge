@@ -5,14 +5,12 @@ from pydantic import Field
 class Settings(BaseSettings):
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 
-    # LLM backend: "anthropic_proxy" (proxy) or "anthropic_api" (direct SDK)
+    master_encryption_key: str = Field(default="", alias="MASTER_ENCRYPTION_KEY")
+
     llm_backend: str = Field(default="anthropic_proxy", alias="LLM_BACKEND")
 
-    # Only needed when llm_backend = "anthropic_api"
     anthropic_api_key: str = Field(default="", alias="ANTHROPIC_API_KEY")
 
-    # Only needed for ChromaDB embedding (Memory Layer 1 & 3)
-    # If empty, ChromaDB uses its default embedding model (no external API needed)
     openai_api_key: str = Field(default="", alias="OPENAI_API_KEY")
 
     # Anthropic-compatible proxy settings (when llm_backend = "anthropic_proxy")
