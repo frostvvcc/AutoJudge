@@ -8,12 +8,10 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     DateTime,
-    Enum,
     Float,
     ForeignKey,
     Index,
     Integer,
-    LargeBinary,
     String,
     Text,
     JSON,
@@ -129,30 +127,6 @@ class DebateMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     session: Mapped[DebateSession] = relationship(back_populates="messages")
-
-
-class APIKeyPoolRecord(Base):
-    """Encrypted API key storage — modeled after AutoResearch's Aurora credential table."""
-    __tablename__ = "api_key_pool"
-
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    name: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
-    backend: Mapped[str] = mapped_column(String(20), nullable=False)
-    encrypted_key: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
-    base_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
-
-    rpm_limit: Mapped[int] = mapped_column(Integer, default=50)
-    tpm_limit: Mapped[int] = mapped_column(Integer, default=100000)
-    daily_token_limit: Mapped[int] = mapped_column(Integer, default=1000000)
-
-    status: Mapped[str] = mapped_column(String(20), default="active")
-    total_tokens_used: Mapped[int] = mapped_column(BigInteger, default=0)
-    total_requests: Mapped[int] = mapped_column(Integer, default=0)
-
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow,
-    )
 
 
 class AuditLog(Base):
