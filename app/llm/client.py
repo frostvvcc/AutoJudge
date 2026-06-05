@@ -130,9 +130,9 @@ class AgentResponse:
 
 # ─── Backend 2: Anthropic SDK (direct API) ───────────────────────────────────
 
-def _get_anthropic_client():
+def _get_anthropic_client(api_key: str | None = None):
     import anthropic
-    return anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
+    return anthropic.AsyncAnthropic(api_key=api_key or settings.anthropic_api_key)
 
 
 def _parse_api_response(response, agent: str) -> AgentResponse:
@@ -259,6 +259,7 @@ async def _call_anthropic_api(
     max_tokens: int = 4000,
     tools: list[dict] | None = None,
     tool_choice: dict | None = None,
+    api_key: str | None = None,
 ) -> AgentResponse:
     """Call Anthropic API directly with tool_use structured output.
 
@@ -269,7 +270,7 @@ async def _call_anthropic_api(
     import anthropic
     from app.llm.model_router import get_model_for_agent
 
-    client = _get_anthropic_client()
+    client = _get_anthropic_client(api_key=api_key)
     default_tools, default_tool_choice = _get_tools_for_agent(agent)
     tools = tools or default_tools
     tool_choice = tool_choice or default_tool_choice
@@ -444,6 +445,8 @@ async def _call_anthropic_proxy(
     max_tokens: int = 4000,
     tools: list[dict] | None = None,
     tool_choice: dict | None = None,
+    api_key: str | None = None,
+    base_url: str | None = None,
 ) -> AgentResponse:
     """Call Anthropic-compatible proxy via SSE streaming (avoids CDN timeout)."""
     import httpx
@@ -478,9 +481,11 @@ async def _call_anthropic_proxy(
     if tool_choice:
         body["tool_choice"] = tool_choice
 
-    url = f"{settings.anthropic_proxy_base_url}/v1/messages"
+    resolved_base_url = base_url or settings.anthropic_proxy_base_url
+    resolved_api_key = api_key or settings.anthropic_proxy_api_key
+    url = f"{resolved_base_url}/v1/messages"
     headers = {
-        "x-api-key": settings.anthropic_proxy_api_key,
+        "x-api-key": resolved_api_key,
         "anthropic-version": "2023-06-01",
         "Content-Type": "application/json",
     }
@@ -616,6 +621,19 @@ def _is_retryable(exc: BaseException) -> bool:
     return False
 
 
+def _is_rate_limit(exc: BaseException) -> bool:
+    err_str = str(exc).lower()
+    if "429" in err_str or "rate" in err_str:
+        return True
+    try:
+        import anthropic
+        if isinstance(exc, anthropic.RateLimitError):
+            return True
+    except ImportError:
+        pass
+    return False
+
+
 @retry(
     stop=stop_after_attempt(3),
     wait=wait_exponential(multiplier=1, min=2, max=30),
@@ -629,36 +647,56 @@ async def call_agent(
     tool_choice: dict | None = None,
     model: str | None = None,
     max_tokens: int = 4000,
+    session_id: str | None = None,
 ) -> AgentResponse:
     """
-    Unified agent call — routes to claude -p or Anthropic API based on config.
-
-    When using claude -p:
-      - tools/tool_choice params are ignored (structured output via JSON prompt)
-      - model param is ignored (uses claude CLI's configured model)
-      - No API key needed
-
-    When using anthropic_api:
-      - Full tool_use support with forced structured output
-      - Requires ANTHROPIC_API_KEY
+    Unified agent call — acquires a key from the pool, routes to the
+    appropriate backend, and releases/cools down the key afterward.
     """
-    if settings.llm_backend == "anthropic_proxy":
-        return await _call_anthropic_proxy(
-            agent=agent,
-            system_prompt=system_prompt,
-            messages=messages,
-            model=model,
-            max_tokens=max_tokens,
-            tools=tools,
-            tool_choice=tool_choice,
-        )
+    from app.llm.key_pool import get_pool, PoolExhausted
+
+    pool = get_pool()
+    member = None
+
+    if pool.members:
+        try:
+            member = await pool.acquire(session_id=session_id)
+        except PoolExhausted:
+            logger.warning("key_pool_exhausted, falling back to env config")
+
+    if member:
+        try:
+            if member.backend == "anthropic_proxy":
+                response = await _call_anthropic_proxy(
+                    agent=agent, system_prompt=system_prompt, messages=messages,
+                    model=model, max_tokens=max_tokens, tools=tools,
+                    tool_choice=tool_choice,
+                    api_key=member.decrypted_key, base_url=member.base_url,
+                )
+            else:
+                response = await _call_anthropic_api(
+                    agent=agent, system_prompt=system_prompt, messages=messages,
+                    model=model, max_tokens=max_tokens, tools=tools,
+                    tool_choice=tool_choice,
+                    api_key=member.decrypted_key,
+                )
+            await pool.release(member, response.tokens_used)
+            return response
+        except Exception as exc:
+            if _is_rate_limit(exc):
+                await pool.handle_rate_limit(member)
+                logger.warning("key_rate_limited name=%s, retrying with next key", member.name)
+            raise
     else:
-        return await _call_anthropic_api(
-            agent=agent,
-            system_prompt=system_prompt,
-            messages=messages,
-            model=model,
-            max_tokens=max_tokens,
-            tools=tools,
-            tool_choice=tool_choice,
-        )
+        if settings.llm_backend == "anthropic_proxy":
+            return await _call_anthropic_proxy(
+                agent=agent, system_prompt=system_prompt, messages=messages,
+                model=model, max_tokens=max_tokens, tools=tools,
+                tool_choice=tool_choice,
+            )
+        else:
+            return await _call_anthropic_api(
+                agent=agent, system_prompt=system_prompt, messages=messages,
+                model=model, max_tokens=max_tokens, tools=tools,
+                tool_choice=tool_choice,
+            )

@@ -1,14 +1,19 @@
 from __future__ import annotations
 
+import enum
 import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import (
+    BigInteger,
     Boolean,
     DateTime,
+    Enum,
     Float,
     ForeignKey,
+    Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     JSON,
@@ -18,6 +23,17 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 class Base(DeclarativeBase):
     pass
+
+
+class DebateStatus(str, enum.Enum):
+    CREATED = "created"
+    QUEUED = "queued"
+    PLANNING = "planning"
+    DEBATING = "debating"
+    ARBITRATING = "arbitrating"
+    FIXING = "fixing"
+    COMPLETED = "completed"
+    FAILED = "failed"
 
 
 def _utcnow() -> datetime:
@@ -66,8 +82,10 @@ class DebateSession(Base):
     framework: Mapped[str | None] = mapped_column(String(50), nullable=True)
     config_json: Mapped[dict] = mapped_column(JSON, default=dict)
 
-    # Result
-    status: Mapped[str] = mapped_column(String(20), nullable=False, default="running")
+    # Result — 8-state FSM (modeled after AutoResearch's 7-state FSM)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False, default=DebateStatus.CREATED.value, index=True,
+    )
     result_code: Mapped[str | None] = mapped_column(Text, nullable=True)
     confidence: Mapped[float] = mapped_column(Float, default=0.0)
     converged: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -80,7 +98,7 @@ class DebateSession(Base):
     quality_report_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
 
     # Timestamps
-    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, index=True)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     # Metrics shorthand
@@ -111,3 +129,45 @@ class DebateMessage(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
 
     session: Mapped[DebateSession] = relationship(back_populates="messages")
+
+
+class APIKeyPoolRecord(Base):
+    """Encrypted API key storage — modeled after AutoResearch's Aurora credential table."""
+    __tablename__ = "api_key_pool"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(50), nullable=False, unique=True)
+    backend: Mapped[str] = mapped_column(String(20), nullable=False)
+    encrypted_key: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    base_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+    rpm_limit: Mapped[int] = mapped_column(Integer, default=50)
+    tpm_limit: Mapped[int] = mapped_column(Integer, default=100000)
+    daily_token_limit: Mapped[int] = mapped_column(Integer, default=1000000)
+
+    status: Mapped[str] = mapped_column(String(20), default="active")
+    total_tokens_used: Mapped[int] = mapped_column(BigInteger, default=0)
+    total_requests: Mapped[int] = mapped_column(Integer, default=0)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow,
+    )
+
+
+class AuditLog(Base):
+    """Request audit trail — modeled after AutoResearch's 9th middleware layer."""
+    __tablename__ = "audit_logs"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    request_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    method: Mapped[str] = mapped_column(String(10), nullable=False)
+    path: Mapped[str] = mapped_column(String(255), nullable=False)
+    status_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ip_address: Mapped[str | None] = mapped_column(String(45), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow)
+
+    __table_args__ = (
+        Index("idx_audit_user_time", "user_id", "created_at"),
+    )
