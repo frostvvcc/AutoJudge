@@ -462,12 +462,17 @@ async def _call_anthropic_proxy(
     if cached_tools:
         cached_tools[-1] = {**cached_tools[-1], "cache_control": {"type": "ephemeral"}}
 
+    needs_forced_tool = tool_choice and tool_choice.get("type") in ("tool", "any")
+    is_thinking_model = "opus" in resolved_model
+
     body: dict = {
         "model": resolved_model,
         "max_tokens": max_tokens,
         "system": system_blocks,
         "messages": messages,
     }
+    if is_thinking_model and needs_forced_tool:
+        body["thinking"] = {"type": "disabled", "budget_tokens": 0}
     if cached_tools:
         body["tools"] = cached_tools
     if tool_choice:
