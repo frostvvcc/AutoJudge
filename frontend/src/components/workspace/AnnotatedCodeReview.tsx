@@ -1,7 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import type { DebateMessage } from '../../types/debate';
 import { AGENT_LABELS } from '../../types/debate';
 
 interface Finding {
@@ -54,7 +51,7 @@ function matchResponseToFinding(finding: Finding, fIdx: number, responses: Coder
   return responses.find(r => (r.finding_ref ?? '').toUpperCase() === ref) ?? null;
 }
 
-export default function AnnotatedCodeReview({ code, language, findings, coderResponses, round, coderFixedLines }: Props) {
+export default function AnnotatedCodeReview({ code, findings, coderResponses, coderFixedLines }: Props) {
   const [fontSize, setFontSize] = useState(12);
   const [openAnns, setOpenAnns] = useState<Set<number>>(() => new Set(findings.length > 0 ? [0] : []));
   const [copied, setCopied] = useState(false);
