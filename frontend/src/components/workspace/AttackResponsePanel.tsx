@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import ReactMarkdown from 'react-markdown';
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import type { DebateMessage } from '../../types/debate';
 import { AGENT_LABELS, AGENT_DOTS } from '../../types/debate';
 import PlanDisplayCard from './PlanDisplayCard';
@@ -490,6 +492,7 @@ function CoderResponsesSection({
 
 function CoderCodeCard({ message, round }: { message: DebateMessage; round: number }) {
   const [expanded, setExpanded] = useState(false);
+  const [showCode, setShowCode] = useState(false);
   const isFix = message.content.startsWith('[仲裁后修复]') || message.content.startsWith('[补修]') || message.content.startsWith('[聚焦修复');
   const hasCode = !!message.code;
   const content = message.content.replace(/^\[.*?\]\s*/, '');
@@ -507,11 +510,32 @@ function CoderCodeCard({ message, round }: { message: DebateMessage; round: numb
           {isFix ? 'Coder 修复' : round <= 1 ? 'Coder 初版代码' : 'Coder 回应'}
         </span>
         {hasCode && (
-          <span className="text-xs px-2 py-0.5 bg-white rounded-full border border-gray-200 text-gray-500">
-            代码已更新
-          </span>
+          <button
+            onClick={() => setShowCode(!showCode)}
+            className={`text-xs px-2 py-0.5 rounded-full border transition-colors ${
+              showCode ? 'bg-blue-100 border-blue-300 text-blue-700' : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+            }`}
+          >
+            {showCode ? '隐藏代码' : '查看代码'}
+          </button>
         )}
       </div>
+
+      {/* Code preview */}
+      {hasCode && showCode && (
+        <div className="mb-3 rounded-lg overflow-hidden border border-gray-300">
+          <SyntaxHighlighter
+            language="python"
+            style={oneDark}
+            customStyle={{ margin: 0, padding: '0.75rem', fontSize: '0.75rem', maxHeight: '350px' }}
+            showLineNumbers
+            lineNumberStyle={{ color: '#4a5568', fontSize: '0.65rem' }}
+          >
+            {message.code!}
+          </SyntaxHighlighter>
+        </div>
+      )}
+
       <div className={`text-sm text-gray-700 prose prose-sm max-w-none
                        prose-headings:text-gray-800 prose-headings:text-sm prose-headings:font-semibold
                        prose-code:text-blue-600 prose-code:bg-white prose-code:px-1 prose-code:rounded

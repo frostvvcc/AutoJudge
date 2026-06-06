@@ -13,9 +13,28 @@ from tenacity import (
     retry_if_exception,
 )
 
+import contextvars
+
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+_stream_callback: contextvars.ContextVar[callable | None] = contextvars.ContextVar(
+    '_stream_callback', default=None
+)
+
+
+def set_stream_callback(cb: callable | None):
+    _stream_callback.set(cb)
+
+
+async def _emit_stream(text: str):
+    cb = _stream_callback.get(None)
+    if cb:
+        try:
+            await cb(text)
+        except Exception:
+            pass
 
 
 
@@ -293,14 +312,28 @@ async def _call_anthropic_api(
     max_tool_turns = 5
 
     for turn in range(max_tool_turns + 1):
-        response = await client.messages.create(
-            model=resolved_model,
-            system=system_blocks,
-            messages=conv_messages,
-            tools=cached_tools,
-            tool_choice={"type": "any"} if agent == "coder" else tool_choice,
-            max_tokens=max_tokens,
-        )
+        has_stream_cb = _stream_callback.get(None) is not None
+        if has_stream_cb:
+            async with client.messages.stream(
+                model=resolved_model,
+                system=system_blocks,
+                messages=conv_messages,
+                tools=cached_tools,
+                tool_choice={"type": "any"} if agent == "coder" else tool_choice,
+                max_tokens=max_tokens,
+            ) as stream:
+                async for text in stream.text_stream:
+                    await _emit_stream(text)
+                response = await stream.get_final_message()
+        else:
+            response = await client.messages.create(
+                model=resolved_model,
+                system=system_blocks,
+                messages=conv_messages,
+                tools=cached_tools,
+                tool_choice={"type": "any"} if agent == "coder" else tool_choice,
+                max_tokens=max_tokens,
+            )
 
         total_tokens += response.usage.input_tokens + response.usage.output_tokens
         total_cache_read += getattr(response.usage, "cache_read_input_tokens", 0) or 0
@@ -404,7 +437,10 @@ async def _stream_anthropic_sse(http, url: str, headers: dict, body: dict) -> di
                     continue
                 if delta.get("type") == "text_delta":
                     current_block.setdefault("text", "")
-                    current_block["text"] += delta.get("text", "")
+                    chunk = delta.get("text", "")
+                    current_block["text"] += chunk
+                    if chunk:
+                        await _emit_stream(chunk)
                 elif delta.get("type") == "input_json_delta":
                     current_block["_input_json"] += delta.get("partial_json", "")
 

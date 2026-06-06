@@ -36,6 +36,8 @@ interface DebateState {
   interruptData: InterruptData | null;
   activeAgents: Set<string>;
   elapsedMs: number;
+  streamingAgent: string | null;
+  streamingText: string;
   submit: (task: string, language: string) => void;
   skipAttacker: (attacker: string) => void;
   stop: () => void;
@@ -65,6 +67,8 @@ export function DebateProvider({ children }: { children: ReactNode }) {
   const [interruptData, setInterruptData] = useState<InterruptData | null>(null);
   const [activeAgents, setActiveAgents] = useState<Set<string>>(new Set());
   const [elapsedMs, setElapsedMs] = useState(0);
+  const [streamingAgent, setStreamingAgent] = useState<string | null>(null);
+  const [streamingText, setStreamingText] = useState('');
 
   const wsSendRef = useRef<(data: Record<string, unknown>) => void>(() => {});
 
@@ -106,6 +110,8 @@ export function DebateProvider({ children }: { children: ReactNode }) {
 
       case 'agent_start':
         setStatusText(`${event.agent} 正在分析...`);
+        setStreamingAgent(event.agent ?? null);
+        setStreamingText('');
         setActiveAgents((prev) => {
           const next = new Set(prev);
           next.add(event.agent!);
@@ -113,8 +119,23 @@ export function DebateProvider({ children }: { children: ReactNode }) {
         });
         break;
 
+      case 'stream': {
+        const delta = (event as unknown as Record<string, unknown>).delta as string | undefined;
+        if (delta) {
+          setStreamingText((prev) => prev + delta);
+        }
+        break;
+      }
+
+      case 'stream_end':
+        setStreamingAgent(null);
+        setStreamingText('');
+        break;
+
       case 'message':
         if (event.agent) {
+          setStreamingAgent(null);
+          setStreamingText('');
           setMessages((prev) => [
             ...prev,
             {
@@ -225,6 +246,8 @@ export function DebateProvider({ children }: { children: ReactNode }) {
       setError(null);
       setInterruptData(null);
       setActiveAgents(new Set());
+      setStreamingAgent(null);
+      setStreamingText('');
       startTimer();
 
       const ws = new WebSocket(getWsUrl());
@@ -313,6 +336,8 @@ export function DebateProvider({ children }: { children: ReactNode }) {
     setInterruptData(null);
     setActiveAgents(new Set());
     setElapsedMs(0);
+    setStreamingAgent(null);
+    setStreamingText('');
   }, [stopTimer]);
 
   const respondToInterrupt = useCallback((response: Record<string, unknown>) => {
@@ -333,6 +358,8 @@ export function DebateProvider({ children }: { children: ReactNode }) {
         interruptData,
         activeAgents,
         elapsedMs,
+        streamingAgent,
+        streamingText,
         submit,
         skipAttacker,
         stop,
