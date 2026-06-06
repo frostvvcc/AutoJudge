@@ -44,6 +44,7 @@ class DebateMetrics(BaseModel):
     cost_usd: float = 0.0
     cache_stats: dict = Field(default_factory=dict)
     tokens_by_agent: dict[str, int] = Field(default_factory=dict)
+    tokens_by_phase: dict[str, int] = Field(default_factory=dict)
 
 
 class QualityReport(BaseModel):

@@ -1323,6 +1323,7 @@ async def run_debate_with_graph(
 
     # --- Post-processing: TestRunner ---
     final_code = final_state.get("current_code", "")
+    verify_summary = None
     if final_code:
         try:
             test_runner = TestRunner()
@@ -1342,6 +1343,14 @@ async def run_debate_with_graph(
                 debate_context=ctx_for_test,
                 language=language,
             )
+            verify_summary = {
+                "passed": verify_result.passed,
+                "reason": verify_result.reason,
+                "tests_passed": verify_result.tests_passed,
+                "tests_failed": verify_result.tests_failed,
+                "test_sources": verify_result.test_sources,
+            }
+            await _notify({"type": "test_result", **verify_summary})
             if not verify_result.passed:
                 logger.info("graph_test_verification_failed stderr=%s", verify_result.stderr[:200])
         except Exception as e:
@@ -1463,6 +1472,13 @@ async def run_debate_with_graph(
             "thread_id": thread_id,
             "arbitration": final_state.get("arbitration_result") or None,
             "requires_human_review": _needs_human_review(final_state),
+            "process_transparency": {
+                "complexity": complexity.value,
+                "memory_reads": len(experiences) if experiences else 0,
+                "memory_writes_findings": len(accepted_findings),
+                "consensus_status": final_state.get("consensus", {}),
+                "test_verification": verify_summary,
+            },
         },
     )
 

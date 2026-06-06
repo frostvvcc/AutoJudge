@@ -67,6 +67,26 @@ async function tryRefreshToken(): Promise<boolean> {
   }
 }
 
+// ---------- Generic helpers ----------
+
+export async function fetchJson<T>(path: string): Promise<T> {
+  const p = path.startsWith(API_BASE) ? path.slice(API_BASE.length) : path;
+  return request<T>(p);
+}
+
+export async function postJson<T = unknown>(path: string, body: unknown): Promise<T> {
+  const p = path.startsWith(API_BASE) ? path.slice(API_BASE.length) : path;
+  return request<T>(p, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  });
+}
+
+export async function deleteJson<T = unknown>(path: string): Promise<T> {
+  const p = path.startsWith(API_BASE) ? path.slice(API_BASE.length) : path;
+  return request<T>(p, { method: 'DELETE' });
+}
+
 // ---------- Auth ----------
 
 export interface UserInfo {
