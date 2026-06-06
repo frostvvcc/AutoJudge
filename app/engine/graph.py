@@ -36,6 +36,7 @@ def _max_int(left: int, right: int) -> int:
     """Reducer: take the higher budget_spent value from parallel nodes."""
     return max(left, right)
 
+from app.llm.client import set_stream_callback
 from app.agents.coder import CoderAgent
 from app.agents.security_attacker import SecurityAttacker
 from app.agents.performance_attacker import PerformanceAttacker
@@ -78,6 +79,13 @@ async def _notify(event: dict):
             await cb(event)
         except Exception:
             pass
+
+
+def _make_stream_cb(agent_name: str):
+    """Create a streaming callback that sends text deltas to the frontend."""
+    async def _on_stream(delta: str):
+        await _notify({"type": "stream", "agent": agent_name, "delta": delta})
+    return _on_stream
 
 
 # ─── State ──────────────────────────────────────────────────────────────────
@@ -303,9 +311,12 @@ async def coder_node(state: DebateState) -> dict:
         )
 
     start = time.monotonic()
+    set_stream_callback(_make_stream_cb("coder"))
     response = await coder_agent.speak(ctx, prompt, budget)
+    set_stream_callback(None)
     record_agent_call("coder", response.tokens_used, time.monotonic() - start)
 
+    await _notify({"type": "stream_end", "agent": "coder"})
     new_msg = {
         "agent": "coder",
         "content": response.content,
@@ -342,8 +353,11 @@ async def _attacker_node(
 
     try:
         start = time.monotonic()
+        set_stream_callback(_make_stream_cb(agent_name))
         response = await agent_instance.speak(ctx, prompt, budget)
+        set_stream_callback(None)
         record_agent_call(agent_name, response.tokens_used, time.monotonic() - start)
+        await _notify({"type": "stream_end", "agent": agent_name})
         new_msg = {
             "agent": agent_name,
             "content": response.content,
@@ -499,7 +513,9 @@ def _check_and_return_consensus(
         for m in latest_per_agent.values()
     ]
 
-    result = consensus_detector.check_consensus(debate_msgs)
+    skip_list = set(state.get("skip_list", []))
+    active_attackers = {"security", "performance", "correctness"} - skip_list
+    result = consensus_detector.check_consensus(debate_msgs, active_attackers)
 
     update = {
         "consensus": result,
@@ -852,7 +868,10 @@ async def judge_node(state: DebateState) -> dict:
     await _notify({"type": "phase_change", "phase": "judging"})
     await _notify({"type": "agent_start", "agent": "judge"})
 
+    set_stream_callback(_make_stream_cb("judge"))
     report = await judge_agent.summarize(ctx, budget)
+    set_stream_callback(None)
+    await _notify({"type": "stream_end", "agent": "judge"})
     return {
         "judge_report": report,
         "budget_spent": budget.spent,
@@ -1197,6 +1216,23 @@ async def run_debate_with_graph(
         if prefs:
             preference_prompt = user_prefs.build_preference_prompt(prefs)
 
+    # --- Notify frontend: analysis complete ---
+    await _notify({
+        "type": "analysis_complete",
+        "parsed_requirement": parsed_req,
+        "complexity": complexity.value,
+        "experiences": [
+            {
+                "content": exp.get("content", ""),
+                "category": exp.get("category", "unknown"),
+                "severity": exp.get("severity", "medium"),
+                "session_id": exp.get("session_id"),
+                "similarity": exp.get("similarity", 0),
+            }
+            for exp in experiences
+        ] if experiences else [],
+    })
+
     # --- Build initial graph state ---
     # Attackers not in config.attackers get skip-listed so graph nodes skip them
     all_attackers = {"security", "performance", "correctness"}
@@ -1228,7 +1264,7 @@ async def run_debate_with_graph(
             "max_tokens": config.max_tokens,
             "skip_cross_review": config.skip_cross_review,
         },
-        "enable_interrupt": False,
+        "enable_interrupt": interrupt_handler is not None,
         "retry_count": 0,
         "user_decision": "",
     }

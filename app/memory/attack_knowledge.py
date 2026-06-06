@@ -33,6 +33,7 @@ class AttackKnowledgeBase:
         task: str,
         language: str,
         findings: list[dict],
+        session_id: str | None = None,
     ):
         if not self._available:
             return
@@ -51,17 +52,19 @@ class AttackKnowledgeBase:
 
             finding_id = f"finding_{uuid.uuid4().hex[:12]}"
 
+            meta = {
+                "category": finding.get("category", "unknown"),
+                "severity": finding.get("severity", "medium"),
+                "attacker": finding.get("attacker", "unknown"),
+                "language": language,
+            }
+            if session_id:
+                meta["session_id"] = session_id
+
             try:
                 self.collection.add(
                     documents=[doc],
-                    metadatas=[
-                        {
-                            "category": finding.get("category", "unknown"),
-                            "severity": finding.get("severity", "medium"),
-                            "attacker": finding.get("attacker", "unknown"),
-                            "language": language,
-                        }
-                    ],
+                    metadatas=[meta],
                     ids=[finding_id],
                 )
             except Exception as e:
@@ -82,16 +85,20 @@ class AttackKnowledgeBase:
             if not results["documents"] or not results["documents"][0]:
                 return []
 
-            return [
-                {
+            items = []
+            distances = results.get("distances", [[]])[0]
+            for i, (doc, meta) in enumerate(
+                zip(results["documents"][0], results["metadatas"][0])
+            ):
+                similarity = round((1 - distances[i]) * 100) if i < len(distances) else 0
+                items.append({
                     "content": doc,
                     "category": meta.get("category", "unknown"),
                     "severity": meta.get("severity", "medium"),
-                }
-                for doc, meta in zip(
-                    results["documents"][0], results["metadatas"][0]
-                )
-            ]
+                    "session_id": meta.get("session_id"),
+                    "similarity": similarity,
+                })
+            return items
         except Exception as e:
             logger.warning("%s: %s", "retrieve_failed", e)
             return []

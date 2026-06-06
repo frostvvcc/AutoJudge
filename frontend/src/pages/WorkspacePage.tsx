@@ -3,13 +3,39 @@ import { useNavigate, useParams } from 'react-router-dom';
 import NavBar from '../components/NavBar';
 import { useDebate } from '../contexts/DebateContext';
 import PipelineProgress from '../components/workspace/PipelineProgress';
-import AgentStatusBar from '../components/workspace/AgentStatusBar';
+import AnalysisCard from '../components/workspace/AnalysisCard';
 import AttackResponsePanel from '../components/workspace/AttackResponsePanel';
-import RealtimeDashboard from '../components/workspace/RealtimeDashboard';
 import QualityReportPanel from '../components/workspace/QualityReportPanel';
 import CodeEditor from '../components/CodeEditor';
 import * as api from '../lib/api';
 import type { DebatePhase, DebateMessage, QualityReport } from '../types/debate';
+import { AGENT_LABELS, AGENT_DOTS } from '../types/debate';
+import { useRef, useEffect as useLayoutEffect } from 'react';
+
+function StreamingCard({ agent, text }: { agent: string; text: string }) {
+  const endRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }, [text]);
+
+  const dotClass = AGENT_DOTS[agent] ?? 'bg-gray-500';
+  const label = AGENT_LABELS[agent] ?? agent;
+
+  return (
+    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <div className="flex items-center gap-2 mb-3">
+        <div className={`w-2.5 h-2.5 rounded-full ${dotClass} animate-pulse`} />
+        <span className="text-sm font-semibold text-gray-700">{label}</span>
+        <span className="text-xs text-gray-400">正在输出...</span>
+      </div>
+      <div className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap max-h-[300px] overflow-y-auto font-mono">
+        {text}
+        <span className="inline-block w-2 h-4 bg-blue-500 animate-pulse ml-0.5 align-middle" />
+        <div ref={endRef} />
+      </div>
+    </div>
+  );
+}
 
 function inferPhase(status: string, statusText: string): DebatePhase {
   if (status === 'idle') return 'idle';
@@ -35,6 +61,7 @@ export default function WorkspacePage() {
   const [replayData, setReplayData] = useState<api.SessionDetail | null>(null);
   const [replayLoading, setReplayLoading] = useState(false);
   const [replayError, setReplayError] = useState('');
+  const [selectedPhase, setSelectedPhase] = useState<string | null>(null);
 
   useEffect(() => {
     if (!isLive && sid) {
@@ -58,7 +85,6 @@ export default function WorkspacePage() {
     let phase: DebatePhase;
     let confidence: number;
     let qualityReport: QualityReport | null;
-    let riskAssessment: { security: string; performance: string; correctness: string } | null;
     let metrics: { total_rounds: number; total_tokens: number; total_latency_ms: number; cost_usd: number } | null;
     let taskDescription: string;
 
@@ -71,16 +97,10 @@ export default function WorkspacePage() {
       language = replayData.language;
       currentRound = replayData.total_rounds;
       statusText = '历史回放';
-
-      const replayStatus = replayData.status;
-      status = replayStatus;
-      phase = inferPhase(replayStatus, '');
-
+      status = replayData.status;
+      phase = inferPhase(replayData.status, '');
       confidence = replayData.confidence;
       taskDescription = replayData.task;
-
-      const rj = replayData.risk_json as Record<string, string> | null;
-      riskAssessment = rj ? { security: rj.security ?? 'unknown', performance: rj.performance ?? 'unknown', correctness: rj.correctness ?? 'unknown' } : null;
 
       const mj = replayData.metrics_json as Record<string, number> | null;
       metrics = mj ? {
@@ -108,29 +128,19 @@ export default function WorkspacePage() {
       phase = (debate.currentPhase || inferPhase(debate.status, debate.statusText)) as DebatePhase;
       confidence = debate.result?.confidence ?? 0;
       qualityReport = debate.result?.quality_report ?? null;
-      riskAssessment = debate.result?.risk_assessment ?? null;
       metrics = debate.result?.metrics ?? null;
       taskDescription = '';
     }
-    return { messages, code, language, currentRound, statusText, status, phase, confidence, qualityReport, riskAssessment, metrics, taskDescription };
+    return { messages, code, language, currentRound, statusText, status, phase, confidence, qualityReport, metrics, taskDescription };
   }, [isReplay, replayData, debate]);
 
-  const activeAgents = useMemo(() => {
-    const set = new Set<string>();
-    if (viewData.status === 'running') {
-      const t = viewData.statusText.toLowerCase();
-      if (t.includes('coder')) set.add('coder');
-      if (t.includes('security')) set.add('security');
-      if (t.includes('performance')) set.add('performance');
-      if (t.includes('correctness')) set.add('correctness');
-      if (t.includes('attacker') || t.includes('审查') || t.includes('攻击')) { set.add('security'); set.add('performance'); set.add('correctness'); }
-      if (t.includes('仲裁') || t.includes('arbitrat')) set.add('arbitrator');
-      if (t.includes('judge') || t.includes('总结')) set.add('judge');
+  // Auto-select current phase when it changes
+  useEffect(() => {
+    if (!isReplay && viewData.phase !== 'idle' && viewData.phase !== 'error') {
+      setSelectedPhase(null);
     }
-    return set;
-  }, [viewData.status, viewData.statusText]);
+  }, [viewData.phase, isReplay]);
 
-  // Early returns AFTER all hooks
   if (isLive && debate.status === 'idle') {
     navigate('/dashboard');
     return null;
@@ -164,14 +174,14 @@ export default function WorkspacePage() {
     );
   }
 
-  const { messages, code, language, currentRound, statusText, status, phase, confidence, qualityReport, riskAssessment, metrics, taskDescription } = viewData;
-  const isDone = status === 'done' || status === 'converged';
+  const { messages, code, language, currentRound, statusText, status, phase, confidence, qualityReport, metrics, taskDescription } = viewData;
+  const isDone = status === 'done' || status === 'converged' || status === 'completed';
 
   return (
     <div className="min-h-screen bg-gray-50">
       <NavBar />
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-4 space-y-4">
+      <main className="max-w-5xl mx-auto px-4 sm:px-6 py-4 space-y-4">
         {/* Replay badge */}
         {isReplay && (
           <div className="flex items-start gap-3 px-4 py-3 bg-blue-50 rounded-xl border border-blue-100">
@@ -188,45 +198,73 @@ export default function WorkspacePage() {
           </div>
         )}
 
-        {/* Pipeline progress */}
-        <PipelineProgress phase={phase} currentRound={currentRound} maxRounds={5} statusText={isReplay ? '' : statusText} />
+        {/* Pipeline progress — doubles as phase selector */}
+        <PipelineProgress
+          phase={phase}
+          currentRound={currentRound}
+          maxRounds={5}
+          statusText={isReplay ? '' : statusText}
+          activeAgents={isReplay ? new Set() : debate.activeAgents}
+          elapsedMs={isReplay ? 0 : debate.elapsedMs}
+          selectedPhase={selectedPhase}
+          onSelectPhase={setSelectedPhase}
+        />
 
-        {/* Agent status (live only) */}
-        {!isReplay && <AgentStatusBar activeAgents={activeAgents} />}
-
-        {/* Main layout */}
-        <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
-          <div className="lg:col-span-3 space-y-4">
-            {!isReplay && status === 'running' && (
-              <div className="flex items-center justify-end gap-2">
-                <button onClick={debate.stop} className="px-3 py-1 text-xs bg-red-50 hover:bg-red-100 rounded border border-red-200 text-red-600">
-                  终止
-                </button>
-              </div>
-            )}
-
-            <AttackResponsePanel messages={messages} currentRound={currentRound} />
-
-            {!isReplay && status === 'running' && (
-              <div className="flex items-center gap-2 text-gray-500 text-sm p-3">
-                <div className="w-4 h-4 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                {statusText || '处理中...'}
-              </div>
-            )}
+        {/* Stop button */}
+        {!isReplay && status === 'running' && (
+          <div className="flex items-center justify-end">
+            <button onClick={debate.stop} className="px-4 py-1.5 text-xs bg-red-50 hover:bg-red-100 rounded-lg border border-red-200 text-red-600 transition-colors">
+              终止任务
+            </button>
           </div>
+        )}
 
-          <div className="lg:col-span-2 space-y-4">
+        {/* Smart analysis card */}
+        {!isReplay && debate.analysisData && (
+          <AnalysisCard data={debate.analysisData} />
+        )}
+
+        {/* Streaming output card */}
+        {!isReplay && debate.streamingAgent && debate.streamingText && (
+          <StreamingCard agent={debate.streamingAgent} text={debate.streamingText} />
+        )}
+
+        {/* Full-width phase content */}
+        <AttackResponsePanel
+          messages={messages}
+          currentRound={currentRound}
+          selectedPhase={selectedPhase ?? (phase === 'idle' || phase === 'error' ? null : phase === 'done' ? 'done' : phase)}
+          interruptData={isReplay ? null : debate.interruptData}
+          onRespondInterrupt={debate.respondToInterrupt}
+        />
+
+        {/* Results section: show in done view */}
+        {isDone && code && (!selectedPhase || selectedPhase === 'done') && (
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <span className="text-lg">📦</span>
+              <h2 className="text-base font-bold text-gray-800">最终交付</h2>
+              {metrics && (
+                <div className="flex items-center gap-3 ml-auto text-xs text-gray-400">
+                  <span>{metrics.total_rounds} 轮</span>
+                  <span>{((metrics.total_tokens ?? 0) / 1000).toFixed(1)}k tokens</span>
+                  <span>{((metrics.total_latency_ms ?? 0) / 1000).toFixed(1)}s</span>
+                  <span>${(metrics.cost_usd ?? 0).toFixed(2)}</span>
+                </div>
+              )}
+            </div>
+
             <CodeEditor code={code} language={language} />
+
             {qualityReport && qualityReport.star_rating > 0 && (
               <QualityReportPanel report={qualityReport} confidence={confidence} />
             )}
-            <RealtimeDashboard messages={messages} risk={riskAssessment ?? undefined} metrics={metrics ?? undefined} />
           </div>
-        </div>
+        )}
 
         {/* Done actions */}
         {isDone && (
-          <div className="flex items-center justify-center gap-3 pt-4">
+          <div className="flex items-center justify-center gap-3 pt-4 pb-8">
             <button
               onClick={() => { if (!isReplay) debate.reset(); navigate('/dashboard'); }}
               className="px-6 py-2.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-medium text-white transition-colors"
@@ -237,9 +275,9 @@ export default function WorkspacePage() {
         )}
 
         {!isReplay && debate.error && (
-          <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center justify-between">
+          <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-center justify-between">
             <p className="text-red-600 text-sm">{debate.error}</p>
-            <button onClick={() => { debate.reset(); navigate('/dashboard'); }} className="shrink-0 ml-4 px-4 py-1.5 bg-white hover:bg-gray-50 border border-gray-200 rounded text-sm text-gray-700">
+            <button onClick={() => { debate.reset(); navigate('/dashboard'); }} className="shrink-0 ml-4 px-4 py-1.5 bg-white hover:bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700">
               重试
             </button>
           </div>

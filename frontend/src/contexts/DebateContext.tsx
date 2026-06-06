@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useEffect,
   useRef,
   useState,
 } from 'react';
@@ -13,6 +14,34 @@ import type {
   WSEvent,
 } from '../types/debate';
 
+export interface InterruptData {
+  type: string;
+  content?: string;
+  round?: number;
+  max_rounds?: number;
+  unresolved_issues?: Array<Record<string, unknown>>;
+  retry_count?: number;
+  options?: Array<Record<string, string>>;
+  [key: string]: unknown;
+}
+
+export interface AnalysisData {
+  parsed_requirement: {
+    functional: string[];
+    constraints: string[];
+    implicit: string[];
+    edge_cases: string[];
+  };
+  complexity: string;
+  experiences: Array<{
+    content: string;
+    category: string;
+    severity: string;
+    session_id?: string;
+    similarity?: number;
+  }>;
+}
+
 interface DebateState {
   status: DebateStatus;
   messages: DebateMessage[];
@@ -21,10 +50,17 @@ interface DebateState {
   currentPhase: string;
   result: DebateResult | null;
   error: string | null;
+  interruptData: InterruptData | null;
+  analysisData: AnalysisData | null;
+  activeAgents: Set<string>;
+  elapsedMs: number;
+  streamingAgent: string | null;
+  streamingText: string;
   submit: (task: string, language: string) => void;
   skipAttacker: (attacker: string) => void;
   stop: () => void;
   reset: () => void;
+  respondToInterrupt: (response: Record<string, unknown>) => void;
 }
 
 const DebateContext = createContext<DebateState | null>(null);
@@ -36,6 +72,8 @@ function getWsUrl(): string {
 
 export function DebateProvider({ children }: { children: ReactNode }) {
   const wsRef = useRef<WebSocket | null>(null);
+  const startTimeRef = useRef<number>(0);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const [status, setStatus] = useState<DebateStatus>('idle');
   const [messages, setMessages] = useState<DebateMessage[]>([]);
@@ -44,6 +82,37 @@ export function DebateProvider({ children }: { children: ReactNode }) {
   const [currentPhase, setCurrentPhase] = useState('idle');
   const [result, setResult] = useState<DebateResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [interruptData, setInterruptData] = useState<InterruptData | null>(null);
+  const [analysisData, setAnalysisData] = useState<AnalysisData | null>(null);
+  const [activeAgents, setActiveAgents] = useState<Set<string>>(new Set());
+  const [elapsedMs, setElapsedMs] = useState(0);
+  const [streamingAgent, setStreamingAgent] = useState<string | null>(null);
+  const [streamingText, setStreamingText] = useState('');
+
+  const wsSendRef = useRef<(data: Record<string, unknown>) => void>(() => {});
+
+  useEffect(() => {
+    wsSendRef.current = (data: Record<string, unknown>) => {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify(data));
+      }
+    };
+  });
+
+  const startTimer = useCallback(() => {
+    startTimeRef.current = Date.now();
+    setElapsedMs(0);
+    timerRef.current = setInterval(() => {
+      setElapsedMs(Date.now() - startTimeRef.current);
+    }, 500);
+  }, []);
+
+  const stopTimer = useCallback(() => {
+    if (timerRef.current) {
+      clearInterval(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
 
   const handleEvent = useCallback((event: WSEvent) => {
     switch (event.type) {
@@ -55,14 +124,37 @@ export function DebateProvider({ children }: { children: ReactNode }) {
         setCurrentRound(event.round ?? 0);
         setCurrentPhase('debate');
         setStatus('running');
+        setActiveAgents(new Set());
         break;
 
       case 'agent_start':
         setStatusText(`${event.agent} 正在分析...`);
+        setStreamingAgent(event.agent ?? null);
+        setStreamingText('');
+        setActiveAgents((prev) => {
+          const next = new Set(prev);
+          next.add(event.agent!);
+          return next;
+        });
+        break;
+
+      case 'stream': {
+        const delta = (event as unknown as Record<string, unknown>).delta as string | undefined;
+        if (delta) {
+          setStreamingText((prev) => prev + delta);
+        }
+        break;
+      }
+
+      case 'stream_end':
+        setStreamingAgent(null);
+        setStreamingText('');
         break;
 
       case 'message':
         if (event.agent) {
+          setStreamingAgent(null);
+          setStreamingText('');
           setMessages((prev) => [
             ...prev,
             {
@@ -73,6 +165,11 @@ export function DebateProvider({ children }: { children: ReactNode }) {
               structured: event.structured,
             },
           ]);
+          setActiveAgents((prev) => {
+            const next = new Set(prev);
+            next.delete(event.agent!);
+            return next;
+          });
         }
         break;
 
@@ -86,6 +183,7 @@ export function DebateProvider({ children }: { children: ReactNode }) {
       case 'result': {
         const resultData = event.data ?? null;
         setResult(resultData);
+        setActiveAgents(new Set());
         const rounds = resultData?.metrics?.total_rounds ?? resultData?.debate?.total_rounds ?? 0;
         const hasCode = Boolean(resultData?.code);
         const degraded = resultData?.metadata?.degradation_level;
@@ -105,14 +203,23 @@ export function DebateProvider({ children }: { children: ReactNode }) {
         break;
       }
 
+      case 'analysis_complete': {
+        const raw = event as unknown as Record<string, unknown>;
+        setAnalysisData({
+          parsed_requirement: (raw.parsed_requirement as AnalysisData['parsed_requirement']) ?? { functional: [], constraints: [], implicit: [], edge_cases: [] },
+          complexity: (raw.complexity as string) ?? 'medium',
+          experiences: (raw.experiences as AnalysisData['experiences']) ?? [],
+        });
+        break;
+      }
+
       case 'phase_change':
         setCurrentPhase(event.phase ?? 'idle');
-        setStatusText(event.phase ? `进入${event.phase}阶段` : '');
+        setActiveAgents(new Set());
         break;
 
       case 'plan_proposal':
         setCurrentPhase('plan');
-        setStatusText('方案已生成，正在自动选择最佳方案...');
         break;
 
       case 'arbitration_complete':
@@ -123,10 +230,20 @@ export function DebateProvider({ children }: { children: ReactNode }) {
         break;
 
       case 'interrupt': {
-        const payload = (event as unknown as Record<string, unknown>).payload as Record<string, unknown> | undefined;
-        const interruptType = payload?.type as string | undefined;
-        if (interruptType === 'plan_review' || interruptType === 'round_complete' || interruptType === 'arbitration_review' || interruptType === 'strategy_review') {
-          wsSend({ type: 'interrupt_response', data: { action: 'auto_select' } });
+        const payload = (event as unknown as Record<string, unknown>).payload as InterruptData | undefined;
+        if (!payload) break;
+        const iType = payload.type;
+        if (iType === 'plan_review' || iType === 'resolution_decision') {
+          setInterruptData(payload);
+          if (iType === 'plan_review') {
+            setCurrentPhase('plan');
+            setStatusText('等待用户选择方案...');
+          } else {
+            setCurrentPhase('user_decision');
+            setStatusText('等待用户决策...');
+          }
+        } else {
+          wsSendRef.current({ type: 'interrupt_response', data: { action: 'auto_select' } });
         }
         break;
       }
@@ -142,12 +259,6 @@ export function DebateProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const wsSend = useCallback((data: Record<string, unknown>) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(data));
-    }
-  }, []);
-
   const submit = useCallback(
     (task: string, language: string) => {
       if (wsRef.current) {
@@ -159,8 +270,15 @@ export function DebateProvider({ children }: { children: ReactNode }) {
       setMessages([]);
       setCurrentRound(0);
       setStatusText('连接中...');
+      setCurrentPhase('idle');
       setResult(null);
       setError(null);
+      setInterruptData(null);
+      setAnalysisData(null);
+      setActiveAgents(new Set());
+      setStreamingAgent(null);
+      setStreamingText('');
+      startTimer();
 
       const ws = new WebSocket(getWsUrl());
       wsRef.current = ws;
@@ -194,10 +312,12 @@ export function DebateProvider({ children }: { children: ReactNode }) {
       ws.onerror = () => {
         setError('WebSocket 连接失败');
         setStatus('error');
+        stopTimer();
       };
 
       ws.onclose = (event) => {
         wsRef.current = null;
+        stopTimer();
         setStatus((prev) => {
           if (prev === 'running' || prev === 'connecting') {
             setError(
@@ -211,25 +331,27 @@ export function DebateProvider({ children }: { children: ReactNode }) {
         });
       };
     },
-    [handleEvent],
+    [handleEvent, startTimer, stopTimer],
   );
 
   const skipAttacker = useCallback(
     (attacker: string) => {
-      wsSend({ type: 'skip_attacker', attacker });
+      wsSendRef.current({ type: 'skip_attacker', attacker });
     },
-    [wsSend],
+    [],
   );
 
   const stop = useCallback(() => {
-    wsSend({ type: 'force_stop' });
+    wsSendRef.current({ type: 'force_stop' });
+    stopTimer();
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
     }
-  }, [wsSend]);
+  }, [stopTimer]);
 
   const reset = useCallback(() => {
+    stopTimer();
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
@@ -241,6 +363,17 @@ export function DebateProvider({ children }: { children: ReactNode }) {
     setCurrentPhase('idle');
     setResult(null);
     setError(null);
+    setInterruptData(null);
+    setAnalysisData(null);
+    setActiveAgents(new Set());
+    setElapsedMs(0);
+    setStreamingAgent(null);
+    setStreamingText('');
+  }, [stopTimer]);
+
+  const respondToInterrupt = useCallback((response: Record<string, unknown>) => {
+    wsSendRef.current({ type: 'interrupt_response', data: response });
+    setInterruptData(null);
   }, []);
 
   return (
@@ -253,10 +386,17 @@ export function DebateProvider({ children }: { children: ReactNode }) {
         currentPhase,
         result,
         error,
+        interruptData,
+        analysisData,
+        activeAgents,
+        elapsedMs,
+        streamingAgent,
+        streamingText,
         submit,
         skipAttacker,
         stop,
         reset,
+        respondToInterrupt,
       }}
     >
       {children}
