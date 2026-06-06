@@ -88,6 +88,7 @@ export interface WSEvent {
 
 export type DebatePhase =
   | 'idle'
+  | 'analysis'
   | 'plan'
   | 'coding'
   | 'debate'

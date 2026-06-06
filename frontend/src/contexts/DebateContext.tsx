@@ -228,6 +228,7 @@ export function DebateProvider({ children }: { children: ReactNode }) {
           complexity: (raw.complexity as string) ?? 'medium',
           experiences: (raw.experiences as AnalysisData['experiences']) ?? [],
         });
+        setCurrentPhase('analysis');
         break;
       }
 
