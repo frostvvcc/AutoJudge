@@ -33,7 +33,13 @@ async def run_debate_task(
     from app.db.engine import async_session
     from app.db.models import DebateSession, DebateMessage as DBMessage
 
-    config = DebateConfig(**config_dict)
+    config = DebateConfig(
+        mode=config_dict.get("mode", "pro"),
+        max_rounds=config_dict.get("max_rounds", 5),
+        attackers=config_dict.get("attackers", ["security", "performance", "correctness"]),
+        model=config_dict.get("model", "claude-sonnet-4-20250514"),
+        max_tokens=config_dict.get("max_tokens", 100_000),
+    )
 
     async with async_session() as db:
         from sqlalchemy import update

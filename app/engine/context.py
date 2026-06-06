@@ -14,6 +14,7 @@ class DebateMessage:
 
 @dataclass
 class DebateConfig:
+    mode: str = "pro"
     max_rounds: int = 5
     attackers: list[str] = field(
         default_factory=lambda: ["security", "performance", "correctness"]

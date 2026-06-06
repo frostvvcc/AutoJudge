@@ -1,7 +1,7 @@
 import { useState } from 'react';
 
 interface Props {
-  onSubmit: (task: string, language: string) => void;
+  onSubmit: (task: string, language: string, mode?: 'flash' | 'pro') => void;
   disabled: boolean;
 }
 

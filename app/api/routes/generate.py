@@ -100,6 +100,7 @@ async def _save_session(
             language=language,
             framework=framework,
             config_json={
+                "mode": config.mode,
                 "max_rounds": config.max_rounds,
                 "attackers": config.attackers,
                 "model": config.model,
@@ -150,6 +151,7 @@ async def generate(
     user: User = Depends(get_current_user),
 ):
     config = DebateConfig(
+        mode=body.config.mode if body.config else "pro",
         max_rounds=body.config.max_rounds if body.config else 5,
         attackers=(
             body.config.attackers
@@ -204,6 +206,7 @@ async def generate_async(
 ):
     """Enqueue a debate task for async processing via arq worker."""
     config = DebateConfig(
+        mode=body.config.mode if body.config else "pro",
         max_rounds=body.config.max_rounds if body.config else 5,
         attackers=(
             body.config.attackers
@@ -230,6 +233,7 @@ async def generate_async(
             language=body.language,
             framework=body.framework,
             config_json={
+                "mode": config.mode,
                 "max_rounds": config.max_rounds,
                 "attackers": config.attackers,
                 "model": config.model,
@@ -327,6 +331,7 @@ async def websocket_generate(websocket: WebSocket):
 
     config_data = init_msg.get("config", {})
     config = DebateConfig(
+        mode=config_data.get("mode", "pro"),
         max_rounds=config_data.get("max_rounds", 5),
         attackers=config_data.get(
             "attackers", ["security", "performance", "correctness"]

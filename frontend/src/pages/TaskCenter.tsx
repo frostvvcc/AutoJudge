@@ -19,6 +19,7 @@ export default function TaskCenter() {
   const debate = useDebate();
   const [task, setTask] = useState('');
   const [language, setLanguage] = useState('python');
+  const [mode, setMode] = useState<'flash' | 'pro'>('pro');
   const [stats, setStats] = useState<api.StatsOut | null>(null);
   const [recentTasks, setRecentTasks] = useState<api.SessionBrief[]>([]);
 
@@ -42,7 +43,7 @@ export default function TaskCenter() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (task.trim().length >= 10) {
-      debate.submit(task.trim(), language);
+      debate.submit(task.trim(), language, mode);
       navigate('/workspace/live');
     }
   };
@@ -125,6 +126,35 @@ export default function TaskCenter() {
                   </optgroup>
                 ))}
               </select>
+
+              {/* Flash / Pro mode toggle */}
+              <div className="flex items-center bg-gray-200 rounded-lg p-0.5">
+                <button
+                  type="button"
+                  onClick={() => setMode('flash')}
+                  disabled={isRunning}
+                  className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                    mode === 'flash'
+                      ? 'bg-white text-amber-600 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  ⚡ Flash
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMode('pro')}
+                  disabled={isRunning}
+                  className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+                    mode === 'pro'
+                      ? 'bg-white text-blue-600 shadow-sm'
+                      : 'text-gray-500 hover:text-gray-700'
+                  }`}
+                >
+                  🛡️ Pro
+                </button>
+              </div>
+
               {task.length > 0 && task.trim().length < 10 && (
                 <span className="text-xs text-gray-600">
                   还需 {10 - task.trim().length} 个字符
@@ -134,15 +164,21 @@ export default function TaskCenter() {
             <button
               type="submit"
               disabled={isRunning || task.trim().length < 10}
-              className="px-6 py-2 bg-blue-600 hover:bg-blue-500 disabled:bg-gray-200 disabled:text-gray-500 rounded-lg text-sm font-medium text-white transition-colors flex items-center gap-2"
+              className={`px-6 py-2 rounded-lg text-sm font-medium text-white transition-colors flex items-center gap-2 ${
+                mode === 'flash'
+                  ? 'bg-amber-500 hover:bg-amber-400 disabled:bg-gray-200 disabled:text-gray-500'
+                  : 'bg-blue-600 hover:bg-blue-500 disabled:bg-gray-200 disabled:text-gray-500'
+              }`}
             >
               {isRunning ? (
                 <>
                   <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
                   运行中
                 </>
+              ) : mode === 'flash' ? (
+                '⚡ 快速生成'
               ) : (
-                '开始生成'
+                '🛡️ 深度生成'
               )}
             </button>
           </div>

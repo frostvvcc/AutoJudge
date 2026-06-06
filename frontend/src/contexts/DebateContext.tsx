@@ -38,7 +38,7 @@ interface DebateState {
   elapsedMs: number;
   streamingAgent: string | null;
   streamingText: string;
-  submit: (task: string, language: string) => void;
+  submit: (task: string, language: string, mode?: 'flash' | 'pro') => void;
   skipAttacker: (attacker: string) => void;
   stop: () => void;
   reset: () => void;
@@ -231,7 +231,7 @@ export function DebateProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const submit = useCallback(
-    (task: string, language: string) => {
+    (task: string, language: string, mode: 'flash' | 'pro' = 'pro') => {
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;
@@ -240,7 +240,7 @@ export function DebateProvider({ children }: { children: ReactNode }) {
       setStatus('connecting');
       setMessages([]);
       setCurrentRound(0);
-      setStatusText('连接中...');
+      setStatusText(mode === 'flash' ? 'Flash 模式连接中...' : '连接中...');
       setCurrentPhase('idle');
       setResult(null);
       setError(null);
@@ -255,17 +255,17 @@ export function DebateProvider({ children }: { children: ReactNode }) {
 
       ws.onopen = () => {
         setStatus('running');
-        setStatusText('已连接，发送任务...');
+        setStatusText(mode === 'flash' ? 'Flash 模式 — 快速生成中...' : '已连接，发送任务...');
         const token = localStorage.getItem('access_token');
+        const config = mode === 'flash'
+          ? { mode: 'flash' as const, max_rounds: 1, attackers: [] as string[] }
+          : { mode: 'pro' as const, max_rounds: 5, attackers: ['security', 'performance', 'correctness'] };
         ws.send(
           JSON.stringify({
             task,
             language,
             token,
-            config: {
-              max_rounds: 5,
-              attackers: ['security', 'performance', 'correctness'],
-            },
+            config,
           }),
         );
       };

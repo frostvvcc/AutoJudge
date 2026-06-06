@@ -207,6 +207,11 @@ export default function WorkspacePage() {
           elapsedMs={isReplay ? 0 : debate.elapsedMs}
           selectedPhase={selectedPhase}
           onSelectPhase={setSelectedPhase}
+          isFlash={
+            isReplay
+              ? (replayData?.config_json as Record<string, unknown>)?.mode === 'flash'
+              : debate.result?.metadata?.mode === 'flash'
+          }
         />
 
         {/* Stop button */}
@@ -238,6 +243,12 @@ export default function WorkspacePage() {
             <div className="flex items-center gap-2">
               <span className="text-lg">📦</span>
               <h2 className="text-base font-bold text-gray-800">最终交付</h2>
+              {(debate.result?.metadata?.mode === 'flash' ||
+                (isReplay && (replayData?.config_json as Record<string, unknown>)?.mode === 'flash')) && (
+                <span className="px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-700 rounded-full">
+                  ⚡ Flash
+                </span>
+              )}
               {metrics && (
                 <div className="flex items-center gap-3 ml-auto text-xs text-gray-400">
                   <span>{metrics.total_rounds} 轮</span>

@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import re
 
+from typing import Literal
+
 from pydantic import BaseModel, Field, field_validator
 
 
 class GenerateConfig(BaseModel):
+    mode: Literal["flash", "pro"] = "pro"
     max_rounds: int = Field(default=5, ge=1, le=7)
     attackers: list[str] = Field(
         default=["security", "performance", "correctness"]

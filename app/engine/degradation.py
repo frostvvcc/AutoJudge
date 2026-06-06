@@ -86,20 +86,24 @@ class DegradationManager:
         api_key: str | None = None,
         interrupt_handler: callable = None,
     ) -> DebateResult:
-        # Check cache first
-        cache = self._get_cache()
-        cached = await cache.get_cached(requirement, language)
-        if cached:
-            logger.info("cache_hit requirement=%s", requirement[:60])
-            return cached
+        is_flash = config.mode == "flash"
+
+        # Check cache first (skip for flash — it's fast enough)
+        if not is_flash:
+            cache = self._get_cache()
+            cached = await cache.get_cached(requirement, language)
+            if cached:
+                logger.info("cache_hit requirement=%s", requirement[:60])
+                return cached
 
         result = await self._run_with_degradation(
             requirement, language, framework, config, on_progress, api_key,
             interrupt_handler,
         )
 
-        # Store result in cache
-        if result.code:
+        # Store result in cache (skip for flash)
+        if not is_flash and result.code:
+            cache = self._get_cache()
             await cache.store(requirement, language, result)
 
         return result
