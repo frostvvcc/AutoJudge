@@ -1228,7 +1228,7 @@ async def run_debate_with_graph(
             "max_tokens": config.max_tokens,
             "skip_cross_review": config.skip_cross_review,
         },
-        "enable_interrupt": False,
+        "enable_interrupt": interrupt_handler is not None,
         "retry_count": 0,
         "user_decision": "",
     }

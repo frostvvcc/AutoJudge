@@ -114,34 +114,39 @@ class DegradationManager:
         api_key: str | None = None,
         interrupt_handler: callable = None,
     ) -> DebateResult:
-        # L0: Full adversarial debate via LangGraph
+        from app.engine.graph import run_debate_with_graph
+
+        async def _notify_degradation(level: str, reason: str):
+            if on_progress:
+                try:
+                    await on_progress({
+                        "type": "status",
+                        "content": f"⚠️ 主流程异常（{reason}），降级到 {level} 模式重试...",
+                    })
+                except Exception:
+                    pass
+
+        # L0: Full adversarial debate via LangGraph (no timeout in dev/test)
         if self.circuit_breaker.state in ("closed", "half-open"):
             try:
-                from app.engine.graph import run_debate_with_graph
-
-                l0_timeout = self._compute_l0_timeout(config)
-                result = await asyncio.wait_for(
-                    run_debate_with_graph(
-                        requirement=requirement,
-                        language=language,
-                        framework=framework,
-                        config=config,
-                        api_key=api_key,
-                        on_progress=on_progress,
-                        interrupt_handler=interrupt_handler,
-                    ),
-                    timeout=l0_timeout,
+                result = await run_debate_with_graph(
+                    requirement=requirement,
+                    language=language,
+                    framework=framework,
+                    config=config,
+                    api_key=api_key,
+                    on_progress=on_progress,
+                    interrupt_handler=interrupt_handler,
                 )
                 self.circuit_breaker.record_success()
                 return result
-            except (asyncio.TimeoutError, Exception) as e:
+            except Exception as e:
                 logger.warning("l0_langgraph_failed error=%s", e, exc_info=True)
                 self.circuit_breaker.record_failure()
+                await _notify_degradation("L1", str(e)[:80])
 
-        # L1: Reduced attackers — still uses LangGraph, just simpler config
+        # L1: Reduced attackers — NO on_progress to avoid "restart" illusion
         try:
-            from app.engine.graph import run_debate_with_graph
-
             reduced_config = DebateConfig(
                 max_rounds=2,
                 attackers=["correctness"],
@@ -149,25 +154,20 @@ class DegradationManager:
                 max_tokens=config.max_tokens,
                 skip_cross_review=True,
             )
-            result = await asyncio.wait_for(
-                run_debate_with_graph(
-                    requirement=requirement,
-                    language=language,
-                    framework=framework,
-                    config=reduced_config,
-                    on_progress=on_progress,
-                ),
-                timeout=120,
+            result = await run_debate_with_graph(
+                requirement=requirement,
+                language=language,
+                framework=framework,
+                config=reduced_config,
             )
             result.metadata["degradation_level"] = "L1_PARTIAL"
             return result
         except Exception as e:
             logger.warning("l1_failed error=%s", e)
+            await _notify_degradation("L2", str(e)[:80])
 
-        # L2: Single agent generation, no debate — still uses LangGraph
+        # L2: Single agent generation, no debate
         try:
-            from app.engine.graph import run_debate_with_graph
-
             no_debate_config = DebateConfig(
                 max_rounds=1,
                 attackers=[],
@@ -175,15 +175,11 @@ class DegradationManager:
                 max_tokens=config.max_tokens,
                 skip_cross_review=True,
             )
-            result = await asyncio.wait_for(
-                run_debate_with_graph(
-                    requirement=requirement,
-                    language=language,
-                    framework=framework,
-                    config=no_debate_config,
-                    on_progress=on_progress,
-                ),
-                timeout=60,
+            result = await run_debate_with_graph(
+                requirement=requirement,
+                language=language,
+                framework=framework,
+                config=no_debate_config,
             )
             result.metadata["degradation_level"] = "L2_SINGLE_AGENT"
             return result
