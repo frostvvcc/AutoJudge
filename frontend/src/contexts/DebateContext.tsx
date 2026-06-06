@@ -25,6 +25,23 @@ export interface InterruptData {
   [key: string]: unknown;
 }
 
+export interface AnalysisData {
+  parsed_requirement: {
+    functional: string[];
+    constraints: string[];
+    implicit: string[];
+    edge_cases: string[];
+  };
+  complexity: string;
+  experiences: Array<{
+    content: string;
+    category: string;
+    severity: string;
+    session_id?: string;
+    similarity?: number;
+  }>;
+}
+
 interface DebateState {
   status: DebateStatus;
   messages: DebateMessage[];
@@ -34,12 +51,12 @@ interface DebateState {
   result: DebateResult | null;
   error: string | null;
   interruptData: InterruptData | null;
+  analysisData: AnalysisData | null;
   activeAgents: Set<string>;
   elapsedMs: number;
   streamingAgent: string | null;
   streamingText: string;
-  mode: 'flash' | 'pro';
-  submit: (task: string, language: string, mode?: 'flash' | 'pro') => void;
+  submit: (task: string, language: string) => void;
   skipAttacker: (attacker: string) => void;
   stop: () => void;
   reset: () => void;
@@ -66,11 +83,11 @@ export function DebateProvider({ children }: { children: ReactNode }) {
   const [result, setResult] = useState<DebateResult | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [interruptData, setInterruptData] = useState<InterruptData | null>(null);
+  const [analysisData, setAnalysisData] = useState<AnalysisData | null>(null);
   const [activeAgents, setActiveAgents] = useState<Set<string>>(new Set());
   const [elapsedMs, setElapsedMs] = useState(0);
   const [streamingAgent, setStreamingAgent] = useState<string | null>(null);
   const [streamingText, setStreamingText] = useState('');
-  const [mode, setMode] = useState<'flash' | 'pro'>('pro');
 
   const wsSendRef = useRef<(data: Record<string, unknown>) => void>(() => {});
 
@@ -186,6 +203,16 @@ export function DebateProvider({ children }: { children: ReactNode }) {
         break;
       }
 
+      case 'analysis_complete': {
+        const raw = event as unknown as Record<string, unknown>;
+        setAnalysisData({
+          parsed_requirement: (raw.parsed_requirement as AnalysisData['parsed_requirement']) ?? { functional: [], constraints: [], implicit: [], edge_cases: [] },
+          complexity: (raw.complexity as string) ?? 'medium',
+          experiences: (raw.experiences as AnalysisData['experiences']) ?? [],
+        });
+        break;
+      }
+
       case 'phase_change':
         setCurrentPhase(event.phase ?? 'idle');
         setActiveAgents(new Set());
@@ -233,21 +260,21 @@ export function DebateProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const submit = useCallback(
-    (task: string, language: string, mode: 'flash' | 'pro' = 'pro') => {
+    (task: string, language: string) => {
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;
       }
 
-      setMode(mode);
       setStatus('connecting');
       setMessages([]);
       setCurrentRound(0);
-      setStatusText(mode === 'flash' ? 'Flash 模式连接中...' : '连接中...');
+      setStatusText('连接中...');
       setCurrentPhase('idle');
       setResult(null);
       setError(null);
       setInterruptData(null);
+      setAnalysisData(null);
       setActiveAgents(new Set());
       setStreamingAgent(null);
       setStreamingText('');
@@ -258,17 +285,17 @@ export function DebateProvider({ children }: { children: ReactNode }) {
 
       ws.onopen = () => {
         setStatus('running');
-        setStatusText(mode === 'flash' ? 'Flash 模式 — 快速生成中...' : '已连接，发送任务...');
+        setStatusText('已连接，发送任务...');
         const token = localStorage.getItem('access_token');
-        const config = mode === 'flash'
-          ? { mode: 'flash' as const, max_rounds: 1, attackers: [] as string[] }
-          : { mode: 'pro' as const, max_rounds: 5, attackers: ['security', 'performance', 'correctness'] };
         ws.send(
           JSON.stringify({
             task,
             language,
             token,
-            config,
+            config: {
+              max_rounds: 5,
+              attackers: ['security', 'performance', 'correctness'],
+            },
           }),
         );
       };
@@ -337,11 +364,11 @@ export function DebateProvider({ children }: { children: ReactNode }) {
     setResult(null);
     setError(null);
     setInterruptData(null);
+    setAnalysisData(null);
     setActiveAgents(new Set());
     setElapsedMs(0);
     setStreamingAgent(null);
     setStreamingText('');
-    setMode('pro');
   }, [stopTimer]);
 
   const respondToInterrupt = useCallback((response: Record<string, unknown>) => {
@@ -360,11 +387,11 @@ export function DebateProvider({ children }: { children: ReactNode }) {
         result,
         error,
         interruptData,
+        analysisData,
         activeAgents,
         elapsedMs,
         streamingAgent,
         streamingText,
-        mode,
         submit,
         skipAttacker,
         stop,

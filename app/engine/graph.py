@@ -1312,6 +1312,23 @@ async def run_debate_with_graph(
         if prefs:
             preference_prompt = user_prefs.build_preference_prompt(prefs)
 
+    # --- Notify frontend: analysis complete ---
+    await _notify({
+        "type": "analysis_complete",
+        "parsed_requirement": parsed_req,
+        "complexity": complexity.value,
+        "experiences": [
+            {
+                "content": exp.get("content", ""),
+                "category": exp.get("category", "unknown"),
+                "severity": exp.get("severity", "medium"),
+                "session_id": exp.get("session_id"),
+                "similarity": exp.get("similarity", 0),
+            }
+            for exp in experiences
+        ] if experiences else [],
+    })
+
     # --- Build initial graph state ---
     # Attackers not in config.attackers get skip-listed so graph nodes skip them
     all_attackers = {"security", "performance", "correctness"}

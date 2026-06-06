@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import NavBar from '../components/NavBar';
 import { useDebate } from '../contexts/DebateContext';
 import PipelineProgress from '../components/workspace/PipelineProgress';
+import AnalysisCard from '../components/workspace/AnalysisCard';
 import AttackResponsePanel from '../components/workspace/AttackResponsePanel';
 import QualityReportPanel from '../components/workspace/QualityReportPanel';
 import CodeEditor from '../components/CodeEditor';
@@ -175,9 +176,6 @@ export default function WorkspacePage() {
 
   const { messages, code, language, currentRound, statusText, status, phase, confidence, qualityReport, metrics, taskDescription } = viewData;
   const isDone = status === 'done' || status === 'converged' || status === 'completed';
-  const isFlash = isReplay
-    ? (replayData?.config_json as Record<string, unknown>)?.mode === 'flash'
-    : debate.mode === 'flash';
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -210,11 +208,6 @@ export default function WorkspacePage() {
           elapsedMs={isReplay ? 0 : debate.elapsedMs}
           selectedPhase={selectedPhase}
           onSelectPhase={setSelectedPhase}
-          isFlash={
-            isReplay
-              ? (replayData?.config_json as Record<string, unknown>)?.mode === 'flash'
-              : debate.mode === 'flash'
-          }
         />
 
         {/* Stop button */}
@@ -226,36 +219,34 @@ export default function WorkspacePage() {
           </div>
         )}
 
+        {/* Smart analysis card */}
+        {!isReplay && debate.analysisData && (
+          <AnalysisCard data={debate.analysisData} />
+        )}
+
         {/* Streaming output card */}
         {!isReplay && debate.streamingAgent && debate.streamingText && (
           <StreamingCard agent={debate.streamingAgent} text={debate.streamingText} />
         )}
 
-        {/* Full-width phase content — skip for Flash (no debate phases to show) */}
-        {!isFlash && (
-          <AttackResponsePanel
-            messages={messages}
-            currentRound={currentRound}
-            selectedPhase={selectedPhase ?? (phase === 'idle' || phase === 'error' ? null : phase === 'done' ? 'done' : phase)}
-            interruptData={isReplay ? null : debate.interruptData}
-            onRespondInterrupt={debate.respondToInterrupt}
-          />
-        )}
+        {/* Full-width phase content */}
+        <AttackResponsePanel
+          messages={messages}
+          currentRound={currentRound}
+          selectedPhase={selectedPhase ?? (phase === 'idle' || phase === 'error' ? null : phase === 'done' ? 'done' : phase)}
+          interruptData={isReplay ? null : debate.interruptData}
+          onRespondInterrupt={debate.respondToInterrupt}
+        />
 
         {/* Results section: show in done view */}
         {isDone && code && (!selectedPhase || selectedPhase === 'done') && (
           <div className="space-y-4">
             <div className="flex items-center gap-2">
-              <span className="text-lg">{isFlash ? '⚡' : '📦'}</span>
-              <h2 className="text-base font-bold text-gray-800">{isFlash ? 'Flash 交付' : '最终交付'}</h2>
-              {isFlash && (
-                <span className="px-2 py-0.5 text-xs font-medium bg-amber-100 text-amber-700 rounded-full">
-                  快速生成
-                </span>
-              )}
+              <span className="text-lg">📦</span>
+              <h2 className="text-base font-bold text-gray-800">最终交付</h2>
               {metrics && (
                 <div className="flex items-center gap-3 ml-auto text-xs text-gray-400">
-                  {!isFlash && <span>{metrics.total_rounds} 轮</span>}
+                  <span>{metrics.total_rounds} 轮</span>
                   <span>{((metrics.total_tokens ?? 0) / 1000).toFixed(1)}k tokens</span>
                   <span>{((metrics.total_latency_ms ?? 0) / 1000).toFixed(1)}s</span>
                   <span>${(metrics.cost_usd ?? 0).toFixed(2)}</span>
@@ -265,20 +256,8 @@ export default function WorkspacePage() {
 
             <CodeEditor code={code} language={language} />
 
-            {isFlash ? (
-              <div className="bg-white rounded-lg border border-amber-200 p-5 space-y-3">
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-full bg-green-500" />
-                  <span className="text-sm font-medium text-green-700">自测验证通过</span>
-                </div>
-                <p className="text-xs text-gray-600 leading-relaxed">
-                  代码已通过 Coder Agent 自测，基本功能验证正常。如需安全、性能、正确性深度审查，请使用 Pro 模式。
-                </p>
-              </div>
-            ) : (
-              qualityReport && qualityReport.star_rating > 0 && (
-                <QualityReportPanel report={qualityReport} confidence={confidence} />
-              )
+            {qualityReport && qualityReport.star_rating > 0 && (
+              <QualityReportPanel report={qualityReport} confidence={confidence} />
             )}
           </div>
         )}
