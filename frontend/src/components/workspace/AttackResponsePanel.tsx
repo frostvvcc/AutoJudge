@@ -35,6 +35,7 @@ export default function AttackResponsePanel({
     plan: 'plan', coding: 'coding', debate: 'debate',
     arbitration: 'arbitration', fixing: 'fixing',
     judging: 'judging', user_decision: 'user_decision',
+    done: 'done',
   };
   const phaseView = selectedPhase && PHASE_MAP[selectedPhase] ? PHASE_MAP[selectedPhase] : 'all';
   const filteredRounds = rounds;
@@ -79,7 +80,9 @@ export default function AttackResponsePanel({
               <span className="text-sm font-bold text-blue-700">Coder 初版代码</span>
             </div>
             {r1Coder.map((msg, i) => (
-              <CoderCodeCard key={`coding-${i}`} message={msg} round={1} />
+              <div key={`coding-${i}`} className="space-y-3">
+                <CoderCodeCard message={msg} round={1} defaultShowCode />
+              </div>
             ))}
           </div>
         ) : (
@@ -181,7 +184,10 @@ export default function AttackResponsePanel({
         )) : <div className="text-center py-12 text-gray-400 text-sm">评审阶段暂无记录</div>;
       })()}
 
-      {/* Default: show all rounds grouped (no phase selected, or "done") */}
+      {/* Done: empty here, results section in WorkspacePage shows code + report */}
+      {phaseView === 'done' && null}
+
+      {/* Default: show all rounds grouped (no specific phase selected) */}
       {phaseView === 'all' && filteredRounds.map((round) => {
         const msgs = groupedByRound[round];
         const coderMsgs = msgs.filter((m) => m.agent === 'coder');
@@ -551,9 +557,9 @@ function CoderResponsesSection({
 }
 
 
-function CoderCodeCard({ message, round }: { message: DebateMessage; round: number }) {
+function CoderCodeCard({ message, round, defaultShowCode }: { message: DebateMessage; round: number; defaultShowCode?: boolean }) {
   const [expanded, setExpanded] = useState(false);
-  const [showCode, setShowCode] = useState(false);
+  const [showCode, setShowCode] = useState(!!defaultShowCode);
   const isFix = message.content.startsWith('[仲裁后修复]') || message.content.startsWith('[补修]') || message.content.startsWith('[聚焦修复');
   const hasCode = !!message.code;
   const content = message.content.replace(/^\[.*?\]\s*/, '');

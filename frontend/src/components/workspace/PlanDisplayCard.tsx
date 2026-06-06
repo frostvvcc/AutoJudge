@@ -118,6 +118,7 @@ const PLAN_THEMES = [
 export default function PlanDisplayCard({ content, selectable, selectedIndex, onSelect }: Props) {
   const { intro, plans, comparison } = parsePlans(content);
   const [showFallback, setShowFallback] = useState<number | null>(null);
+  const adoptedIndex = selectable ? selectedIndex : 0;
 
   return (
     <div className="space-y-4">
@@ -138,7 +139,8 @@ export default function PlanDisplayCard({ content, selectable, selectedIndex, on
       <div className={`grid gap-4 ${plans.length > 1 ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1'}`}>
         {plans.map((plan, i) => {
           const theme = PLAN_THEMES[i % PLAN_THEMES.length];
-          const isSelected = selectedIndex === i;
+          const isSelected = selectable ? selectedIndex === i : false;
+          const isAdopted = !selectable && adoptedIndex === i;
 
           return (
             <div
@@ -147,9 +149,9 @@ export default function PlanDisplayCard({ content, selectable, selectedIndex, on
               className={`
                 rounded-xl border-2 overflow-hidden transition-all duration-300
                 ${selectable ? 'cursor-pointer hover:shadow-lg' : ''}
-                ${isSelected
+                ${isSelected || isAdopted
                   ? `${theme.border} ${theme.selectedRing} ring-2 shadow-lg scale-[1.02]`
-                  : selectedIndex !== null && selectable
+                  : (selectedIndex !== null && selectable) || (!selectable && plans.length > 1)
                     ? `border-gray-200 opacity-60`
                     : `${theme.border} border-opacity-50`
                 }
@@ -171,6 +173,11 @@ export default function PlanDisplayCard({ content, selectable, selectedIndex, on
                 {selectable && !isSelected && (
                   <span className="px-2.5 py-1 bg-white/20 rounded-full text-xs text-white/80">
                     点击选择
+                  </span>
+                )}
+                {isAdopted && (
+                  <span className="px-2.5 py-1 bg-white rounded-full text-xs font-bold text-green-600 shadow-sm">
+                    ✅ 已采用
                   </span>
                 )}
               </div>
@@ -274,13 +281,6 @@ export default function PlanDisplayCard({ content, selectable, selectedIndex, on
       {/* Comparison table */}
       {comparison && <ComparisonTable markdown={comparison} />}
 
-      {/* Auto-selected note (non-interactive mode) */}
-      {!selectable && (
-        <div className="flex items-center gap-2 px-3 py-2.5 bg-blue-50 rounded-lg border border-blue-100">
-          <span className="text-blue-500">✅</span>
-          <span className="text-xs text-blue-600 font-medium">Coder 已自动综合最佳方案开始编码</span>
-        </div>
-      )}
     </div>
   );
 }

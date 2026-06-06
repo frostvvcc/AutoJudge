@@ -227,13 +227,13 @@ export default function WorkspacePage() {
         <AttackResponsePanel
           messages={messages}
           currentRound={currentRound}
-          selectedPhase={selectedPhase ?? (phase === 'idle' || phase === 'done' || phase === 'error' ? null : phase)}
+          selectedPhase={selectedPhase ?? (phase === 'idle' || phase === 'error' ? null : phase === 'done' ? 'done' : phase)}
           interruptData={isReplay ? null : debate.interruptData}
           onRespondInterrupt={debate.respondToInterrupt}
         />
 
-        {/* Results section: only show when no specific phase selected */}
-        {isDone && code && !selectedPhase && (
+        {/* Results section: show in done view */}
+        {isDone && code && (!selectedPhase || selectedPhase === 'done') && (
           <div className="space-y-4">
             <div className="flex items-center gap-2">
               <span className="text-lg">📦</span>
