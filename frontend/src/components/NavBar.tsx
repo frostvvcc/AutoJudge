@@ -24,6 +24,7 @@ export default function NavBar() {
   const NAV_ITEMS = [
     { to: '/dashboard', label: '任务中心' },
     { to: '/history', label: '历史记录' },
+    { to: '/preferences', label: '偏好' },
     { to: '/settings', label: '设置' },
   ];
 

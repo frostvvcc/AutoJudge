@@ -10,6 +10,7 @@ import LoginPage from './pages/LoginPage';
 import RegisterPage from './pages/RegisterPage';
 import HistoryPage from './pages/HistoryPage';
 import SettingsPage from './pages/SettingsPage';
+import PreferencesPage from './pages/PreferencesPage';
 import NotFoundPage from './pages/NotFoundPage';
 import './styles/globals.css';
 
@@ -115,6 +116,14 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
               element={
                 <ProtectedRoute>
                   <SettingsPage />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/preferences"
+              element={
+                <ProtectedRoute>
+                  <PreferencesPage />
                 </ProtectedRoute>
               }
             />

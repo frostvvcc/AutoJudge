@@ -94,7 +94,6 @@ class DebateState(TypedDict):
     requirement: str
     language: str
     framework: str
-    mode: str
     current_code: str
     round: int
     max_rounds: int
@@ -1078,76 +1077,6 @@ def _user_decision_edge(state: DebateState) -> str:
     return "done"
 
 
-# ─── Flash mode nodes ──────────────────────────────────────────────────────
-
-def _mode_router_edge(state: DebateState) -> str:
-    if state.get("mode") == "flash":
-        return "flash"
-    return "pro"
-
-
-async def flash_generate_node(state: DebateState) -> dict:
-    """Flash mode: Coder generates code with self-check, no debate."""
-    ctx, budget = _build_context(state)
-    ctx.round = 1
-
-    await _notify({"type": "phase_change", "phase": "coding"})
-    await _notify({"type": "status", "content": "Flash 模式 — 快速生成中..."})
-    await _notify({"type": "agent_start", "agent": "coder"})
-
-    extra = state.get("extra_context", "")
-    prompt = (
-        f"根据以下需求生成代码：\n{ctx.requirement}\n\n"
-        "要求：\n"
-        "1. 代码必须完整、可直接运行\n"
-        "2. 包含必要的输入验证和错误处理\n"
-        "3. 提交前用 run_code_snippet 自测代码能否正常运行\n"
-        "4. 如果自测发现问题，立即修复后再提交\n"
-    )
-    if extra:
-        prompt += f"\n补充需求：{extra}"
-
-    start = time.monotonic()
-    set_stream_callback(_make_stream_cb("coder"))
-    response = await coder_agent.speak(ctx, prompt, budget)
-    set_stream_callback(None)
-    record_agent_call("coder", response.tokens_used, time.monotonic() - start)
-
-    await _notify({"type": "stream_end", "agent": "coder"})
-
-    code = response.code or ""
-    msg = {
-        "agent": "coder",
-        "content": response.content,
-        "round": 1,
-        "code": code,
-        "structured": response.structured,
-    }
-    await _notify({"type": "message", **msg})
-
-    flash_report = {
-        "star_rating": 3,
-        "star_comment": "Flash 模式快速生成，未经多维度深度审查",
-        "resolved_issues": [],
-        "unresolved_issues": [],
-        "score_security": 0,
-        "score_performance": 0,
-        "score_correctness": 0,
-        "usage_advice": "此代码由 Flash 模式生成，已通过基本自检。如需安全/性能/正确性深度审查，请使用 Pro 模式。",
-        "confidence": 0.6,
-    }
-
-    return {
-        "round": 1,
-        "current_code": code,
-        "messages": [msg],
-        "budget_spent": budget.spent,
-        "converged": True,
-        "convergence_reason": "Flash 模式 — 快速生成完成",
-        "judge_report": flash_report,
-    }
-
-
 # ─── Graph builder ──────────────────────────────────────────────────────────
 
 _compiled_graph = None
@@ -1156,11 +1085,6 @@ _compiled_graph = None
 def build_debate_graph():
     graph = StateGraph(DebateState)
 
-    # Mode router (entry point)
-    graph.add_node("mode_router", lambda state: {})
-    # Flash path
-    graph.add_node("flash_generate", flash_generate_node)
-    # Pro path (full debate)
     graph.add_node("plan", plan_node)
     graph.add_node("coder", coder_node)
     graph.add_node("security", security_node)
@@ -1174,21 +1098,8 @@ def build_debate_graph():
     graph.add_node("focused_retry", focused_retry_node)
     graph.add_node("user_decision", user_decision_node)
 
-    graph.set_entry_point("mode_router")
+    graph.set_entry_point("plan")
 
-    graph.add_conditional_edges(
-        "mode_router",
-        _mode_router_edge,
-        {
-            "flash": "flash_generate",
-            "pro": "plan",
-        },
-    )
-
-    # Flash path → END
-    graph.add_edge("flash_generate", END)
-
-    # Pro path (existing flow)
     graph.add_edge("plan", "coder")
 
     graph.add_edge("coder", "security")
@@ -1274,25 +1185,19 @@ async def run_debate_with_graph(
     config = config or DebateConfig()
     start_time = time.monotonic()
 
-    is_flash = config.mode == "flash"
-
-    if is_flash:
-        await _notify({"type": "status", "content": "Flash 模式启动..."})
-    else:
-        await _notify({"type": "status", "content": "正在理解需求..."})
+    await _notify({"type": "status", "content": "正在理解需求..."})
 
     # --- Pre-processing: requirement parsing + complexity routing ---
     parsed_req = await parse_requirement(requirement, language, framework)
 
-    if not is_flash:
-        complexity = route_complexity(requirement, parsed_req)
-        complexity_config = get_debate_config(complexity)
-        if config.max_rounds == DebateConfig().max_rounds:
-            config.max_rounds = complexity_config["max_rounds"]
-        if config.attackers == DebateConfig().attackers:
-            config.attackers = complexity_config["attackers"]
-        if complexity_config.get("skip_cross_review"):
-            config.skip_cross_review = True
+    complexity = route_complexity(requirement, parsed_req)
+    complexity_config = get_debate_config(complexity)
+    if config.max_rounds == DebateConfig().max_rounds:
+        config.max_rounds = complexity_config["max_rounds"]
+    if config.attackers == DebateConfig().attackers:
+        config.attackers = complexity_config["attackers"]
+    if complexity_config.get("skip_cross_review"):
+        config.skip_cross_review = True
 
     # --- Memory retrieval ---
     from app.db.redis import get_redis
@@ -1301,10 +1206,9 @@ async def run_debate_with_graph(
     fix_patterns = FixPatternStore()
 
     experience_prompt = ""
-    if not is_flash:
-        experiences = await attack_kb.retrieve_relevant(requirement)
-        if experiences:
-            experience_prompt = attack_kb.build_experience_prompt(experiences)
+    experiences = await attack_kb.retrieve_relevant(requirement)
+    if experiences:
+        experience_prompt = attack_kb.build_experience_prompt(experiences)
 
     preference_prompt = ""
     if api_key:
@@ -1332,13 +1236,12 @@ async def run_debate_with_graph(
     # --- Build initial graph state ---
     # Attackers not in config.attackers get skip-listed so graph nodes skip them
     all_attackers = {"security", "performance", "correctness"}
-    skip_list = sorted(all_attackers - set(config.attackers)) if not is_flash else list(all_attackers)
+    skip_list = sorted(all_attackers - set(config.attackers))
 
     initial_state: DebateState = {
         "requirement": requirement,
         "language": language,
         "framework": framework or "",
-        "mode": config.mode,
         "current_code": "",
         "round": 0,
         "max_rounds": config.max_rounds,
@@ -1355,7 +1258,6 @@ async def run_debate_with_graph(
         "convergence_reason": "",
         "selected_plan": "",
         "config": {
-            "mode": config.mode,
             "max_rounds": config.max_rounds,
             "attackers": config.attackers,
             "model": config.model,
@@ -1419,9 +1321,10 @@ async def run_debate_with_graph(
             snapshot = await compiled.aget_state(graph_config)
             final_state = snapshot.values if hasattr(snapshot, "values") else {}
 
-    # --- Post-processing: TestRunner (skip in flash mode) ---
+    # --- Post-processing: TestRunner ---
     final_code = final_state.get("current_code", "")
-    if final_code and not is_flash:
+    verify_summary = None
+    if final_code:
         try:
             test_runner = TestRunner()
             ctx_for_test = DebateContext(requirement, config)
@@ -1440,37 +1343,44 @@ async def run_debate_with_graph(
                 debate_context=ctx_for_test,
                 language=language,
             )
+            verify_summary = {
+                "passed": verify_result.passed,
+                "reason": verify_result.reason,
+                "tests_passed": verify_result.tests_passed,
+                "tests_failed": verify_result.tests_failed,
+                "test_sources": verify_result.test_sources,
+            }
+            await _notify({"type": "test_result", **verify_summary})
             if not verify_result.passed:
                 logger.info("graph_test_verification_failed stderr=%s", verify_result.stderr[:200])
         except Exception as e:
             logger.warning("graph_test_runner_error error=%s", e)
 
-    # --- Post-processing: Memory write-back (skip in flash mode) ---
-    if not is_flash:
-        accepted_findings = []
-        for msg in final_state.get("messages", []):
-            if msg["agent"] in ("security", "performance", "correctness"):
-                structured = msg.get("structured")
-                if structured and isinstance(structured, dict):
-                    for f in structured.get("findings", []):
-                        accepted_findings.append({
-                            **f,
-                            "was_accepted": True,
-                            "attacker": msg["agent"],
-                        })
-        if accepted_findings:
-            await attack_kb.store_findings(requirement, language, accepted_findings)
+    # --- Post-processing: Memory write-back ---
+    accepted_findings = []
+    for msg in final_state.get("messages", []):
+        if msg["agent"] in ("security", "performance", "correctness"):
+            structured = msg.get("structured")
+            if structured and isinstance(structured, dict):
+                for f in structured.get("findings", []):
+                    accepted_findings.append({
+                        **f,
+                        "was_accepted": True,
+                        "attacker": msg["agent"],
+                    })
+    if accepted_findings:
+        await attack_kb.store_findings(requirement, language, accepted_findings)
 
-        for msg in final_state.get("messages", []):
-            if msg["agent"] == "coder" and msg.get("code") and msg.get("structured"):
-                for resp in msg["structured"].get("responses", []):
-                    if resp.get("action") == "accept_and_fix":
-                        await fix_patterns.store_fix(
-                            finding_description=resp.get("explanation", ""),
-                            category=resp.get("finding_ref", "unknown"),
-                            severity="medium",
-                            fix_code=msg["code"],
-                        )
+    for msg in final_state.get("messages", []):
+        if msg["agent"] == "coder" and msg.get("code") and msg.get("structured"):
+            for resp in msg["structured"].get("responses", []):
+                if resp.get("action") == "accept_and_fix":
+                    await fix_patterns.store_fix(
+                        finding_description=resp.get("explanation", ""),
+                        category=resp.get("finding_ref", "unknown"),
+                        severity="medium",
+                        fix_code=msg["code"],
+                    )
 
     if api_key:
         await user_prefs.update_from_request(api_key, {"language": language})
@@ -1486,7 +1396,7 @@ async def run_debate_with_graph(
 
     record_debate_complete(
         language=language,
-        complexity=complexity.value if not is_flash else "simple",
+        complexity=complexity.value,
         rounds=final_round,
         converged=is_converged,
         duration_s=elapsed_ms / 1000,
@@ -1559,10 +1469,16 @@ async def run_debate_with_graph(
         ),
         metadata={
             "engine": "langgraph",
-            "mode": config.mode,
             "thread_id": thread_id,
             "arbitration": final_state.get("arbitration_result") or None,
-            "requires_human_review": _needs_human_review(final_state) if not is_flash else False,
+            "requires_human_review": _needs_human_review(final_state),
+            "process_transparency": {
+                "complexity": complexity.value,
+                "memory_reads": len(experiences) if experiences else 0,
+                "memory_writes_findings": len(accepted_findings),
+                "consensus_status": final_state.get("consensus", {}),
+                "test_verification": verify_summary,
+            },
         },
     )
 

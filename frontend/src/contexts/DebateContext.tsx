@@ -42,6 +42,20 @@ export interface AnalysisData {
   }>;
 }
 
+export interface TestResultData {
+  passed: boolean;
+  reason: string;
+  tests_passed: number;
+  tests_failed: number;
+  test_sources: Record<string, number>;
+}
+
+export interface DegradationData {
+  level: string;
+  reason: string;
+  circuit_breaker_state: string;
+}
+
 interface DebateState {
   status: DebateStatus;
   messages: DebateMessage[];
@@ -52,6 +66,8 @@ interface DebateState {
   error: string | null;
   interruptData: InterruptData | null;
   analysisData: AnalysisData | null;
+  testResult: TestResultData | null;
+  degradation: DegradationData | null;
   activeAgents: Set<string>;
   elapsedMs: number;
   streamingAgent: string | null;
@@ -84,6 +100,8 @@ export function DebateProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [interruptData, setInterruptData] = useState<InterruptData | null>(null);
   const [analysisData, setAnalysisData] = useState<AnalysisData | null>(null);
+  const [testResult, setTestResult] = useState<TestResultData | null>(null);
+  const [degradation, setDegradation] = useState<DegradationData | null>(null);
   const [activeAgents, setActiveAgents] = useState<Set<string>>(new Set());
   const [elapsedMs, setElapsedMs] = useState(0);
   const [streamingAgent, setStreamingAgent] = useState<string | null>(null);
@@ -213,6 +231,28 @@ export function DebateProvider({ children }: { children: ReactNode }) {
         break;
       }
 
+      case 'test_result': {
+        const raw = event as unknown as Record<string, unknown>;
+        setTestResult({
+          passed: (raw.passed as boolean) ?? false,
+          reason: (raw.reason as string) ?? '',
+          tests_passed: (raw.tests_passed as number) ?? 0,
+          tests_failed: (raw.tests_failed as number) ?? 0,
+          test_sources: (raw.test_sources as Record<string, number>) ?? {},
+        });
+        break;
+      }
+
+      case 'degradation': {
+        const raw = event as unknown as Record<string, unknown>;
+        setDegradation({
+          level: (raw.level as string) ?? '',
+          reason: (raw.reason as string) ?? '',
+          circuit_breaker_state: (raw.circuit_breaker_state as string) ?? 'closed',
+        });
+        break;
+      }
+
       case 'phase_change':
         setCurrentPhase(event.phase ?? 'idle');
         setActiveAgents(new Set());
@@ -275,6 +315,8 @@ export function DebateProvider({ children }: { children: ReactNode }) {
       setError(null);
       setInterruptData(null);
       setAnalysisData(null);
+      setTestResult(null);
+      setDegradation(null);
       setActiveAgents(new Set());
       setStreamingAgent(null);
       setStreamingText('');
@@ -365,6 +407,8 @@ export function DebateProvider({ children }: { children: ReactNode }) {
     setError(null);
     setInterruptData(null);
     setAnalysisData(null);
+    setTestResult(null);
+    setDegradation(null);
     setActiveAgents(new Set());
     setElapsedMs(0);
     setStreamingAgent(null);
@@ -388,6 +432,8 @@ export function DebateProvider({ children }: { children: ReactNode }) {
         error,
         interruptData,
         analysisData,
+        testResult,
+        degradation,
         activeAgents,
         elapsedMs,
         streamingAgent,

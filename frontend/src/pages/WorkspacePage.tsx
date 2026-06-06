@@ -4,6 +4,8 @@ import NavBar from '../components/NavBar';
 import { useDebate } from '../contexts/DebateContext';
 import PipelineProgress from '../components/workspace/PipelineProgress';
 import AnalysisCard from '../components/workspace/AnalysisCard';
+import DegradationBanner from '../components/workspace/DegradationBanner';
+import ProcessTransparencyPanel from '../components/workspace/ProcessTransparencyPanel';
 import AttackResponsePanel from '../components/workspace/AttackResponsePanel';
 import QualityReportPanel from '../components/workspace/QualityReportPanel';
 import CodeEditor from '../components/CodeEditor';
@@ -224,6 +226,11 @@ export default function WorkspacePage() {
           <AnalysisCard data={debate.analysisData} />
         )}
 
+        {/* Degradation banner */}
+        {!isReplay && debate.degradation && (
+          <DegradationBanner data={debate.degradation} />
+        )}
+
         {/* Streaming output card */}
         {!isReplay && debate.streamingAgent && debate.streamingText && (
           <StreamingCard agent={debate.streamingAgent} text={debate.streamingText} />
@@ -258,6 +265,10 @@ export default function WorkspacePage() {
 
             {qualityReport && qualityReport.star_rating > 0 && (
               <QualityReportPanel report={qualityReport} confidence={confidence} />
+            )}
+
+            {!isReplay && debate.result && (
+              <ProcessTransparencyPanel result={debate.result} testResult={debate.testResult} />
             )}
           </div>
         )}

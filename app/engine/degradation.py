@@ -86,24 +86,20 @@ class DegradationManager:
         api_key: str | None = None,
         interrupt_handler: callable = None,
     ) -> DebateResult:
-        is_flash = config.mode == "flash"
-
-        # Check cache first (skip for flash — it's fast enough)
-        if not is_flash:
-            cache = self._get_cache()
-            cached = await cache.get_cached(requirement, language)
-            if cached:
-                logger.info("cache_hit requirement=%s", requirement[:60])
-                return cached
+        # Check cache first
+        cache = self._get_cache()
+        cached = await cache.get_cached(requirement, language)
+        if cached:
+            logger.info("cache_hit requirement=%s", requirement[:60])
+            return cached
 
         result = await self._run_with_degradation(
             requirement, language, framework, config, on_progress, api_key,
             interrupt_handler,
         )
 
-        # Store result in cache (skip for flash)
-        if not is_flash and result.code:
-            cache = self._get_cache()
+        # Store result in cache
+        if result.code:
             await cache.store(requirement, language, result)
 
         return result
@@ -123,6 +119,12 @@ class DegradationManager:
         async def _notify_degradation(level: str, reason: str):
             if on_progress:
                 try:
+                    await on_progress({
+                        "type": "degradation",
+                        "level": level,
+                        "reason": reason,
+                        "circuit_breaker_state": self.circuit_breaker.state,
+                    })
                     await on_progress({
                         "type": "status",
                         "content": f"⚠️ 主流程异常（{reason}），降级到 {level} 模式重试...",
@@ -152,7 +154,6 @@ class DegradationManager:
         # L1: Reduced attackers — NO on_progress to avoid "restart" illusion
         try:
             reduced_config = DebateConfig(
-                mode=config.mode,
                 max_rounds=2,
                 attackers=["correctness"],
                 model=config.model,
@@ -174,7 +175,6 @@ class DegradationManager:
         # L2: Single agent generation, no debate
         try:
             no_debate_config = DebateConfig(
-                mode=config.mode,
                 max_rounds=1,
                 attackers=[],
                 model=config.model,

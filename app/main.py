@@ -10,6 +10,7 @@ from app.api.routes.auth import router as auth_router
 from app.api.routes.generate import router as generate_router
 from app.api.routes.health import router as health_router
 from app.api.routes.history import router as history_router
+from app.api.routes.preferences import router as preferences_router
 from app.config import settings
 from app.db.engine import engine
 from app.db.models import Base
@@ -72,6 +73,7 @@ app.include_router(health_router)
 app.include_router(auth_router)
 app.include_router(generate_router)
 app.include_router(history_router)
+app.include_router(preferences_router)
 
 
 if __name__ == "__main__":
