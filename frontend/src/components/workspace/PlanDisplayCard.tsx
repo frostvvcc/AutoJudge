@@ -147,7 +147,12 @@ export default function PlanDisplayCard({ content, selectable, selectedIndex, on
               className={`
                 rounded-xl border-2 overflow-hidden transition-all duration-300
                 ${selectable ? 'cursor-pointer hover:shadow-lg' : ''}
-                ${isSelected ? `${theme.border} ${theme.selectedRing} ring-2 shadow-lg` : `${theme.border} border-opacity-50`}
+                ${isSelected
+                  ? `${theme.border} ${theme.selectedRing} ring-2 shadow-lg scale-[1.02]`
+                  : selectedIndex !== null && selectable
+                    ? `border-gray-200 opacity-60`
+                    : `${theme.border} border-opacity-50`
+                }
               `}
             >
               {/* Plan header */}
@@ -158,12 +163,15 @@ export default function PlanDisplayCard({ content, selectable, selectedIndex, on
                   </span>
                   <span className="text-white font-semibold text-sm">{plan.label}</span>
                 </div>
-                {selectable && (
-                  <div className={`w-5 h-5 rounded-full border-2 border-white/60 flex items-center justify-center transition-all ${
-                    isSelected ? 'bg-white' : ''
-                  }`}>
-                    {isSelected && <span className="text-blue-600 text-xs font-bold">✓</span>}
-                  </div>
+                {selectable && isSelected && (
+                  <span className="px-2.5 py-1 bg-white rounded-full text-xs font-bold text-green-600 shadow-sm animate-pulse">
+                    ✅ 已选择
+                  </span>
+                )}
+                {selectable && !isSelected && (
+                  <span className="px-2.5 py-1 bg-white/20 rounded-full text-xs text-white/80">
+                    点击选择
+                  </span>
                 )}
               </div>
 
@@ -264,14 +272,67 @@ export default function PlanDisplayCard({ content, selectable, selectedIndex, on
       </div>
 
       {/* Comparison table */}
-      {comparison && (
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <h4 className="text-xs font-semibold text-gray-500 mb-2">📊 方案对比</h4>
-          <div className="text-xs prose prose-xs max-w-none prose-table:border-collapse prose-td:border prose-td:border-gray-200 prose-td:px-3 prose-td:py-1.5 prose-th:border prose-th:border-gray-200 prose-th:px-3 prose-th:py-1.5 prose-th:bg-gray-50 prose-th:font-semibold">
-            <ReactMarkdown remarkPlugins={[remarkGfm]}>{comparison}</ReactMarkdown>
-          </div>
+      {comparison && <ComparisonTable markdown={comparison} />}
+
+      {/* Auto-selected note (non-interactive mode) */}
+      {!selectable && (
+        <div className="flex items-center gap-2 px-3 py-2.5 bg-blue-50 rounded-lg border border-blue-100">
+          <span className="text-blue-500">✅</span>
+          <span className="text-xs text-blue-600 font-medium">Coder 已自动综合最佳方案开始编码</span>
         </div>
       )}
+    </div>
+  );
+}
+
+
+function ComparisonTable({ markdown }: { markdown: string }) {
+  const lines = markdown.split('\n').filter((l) => l.includes('|'));
+  const dataRows = lines.filter((l) => !l.match(/^[\s|:-]+$/));
+  if (dataRows.length < 2) return null;
+
+  const parseRow = (line: string) =>
+    line.split('|').map((c) => c.replace(/`/g, '').replace(/\*\*/g, '').trim()).filter(Boolean);
+
+  const headers = parseRow(dataRows[0]);
+  const rows = dataRows.slice(1).map(parseRow);
+
+  const COL_COLORS = [
+    'text-gray-700 font-medium',
+    'text-blue-600',
+    'text-emerald-600',
+    'text-purple-600',
+  ];
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
+        <h4 className="text-sm font-semibold text-gray-700">📊 方案对比</h4>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="bg-gray-50/50">
+              {headers.map((h, i) => (
+                <th key={i} className="px-4 py-2.5 text-left font-semibold text-gray-600 border-b border-gray-200 whitespace-nowrap">
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, ri) => (
+              <tr key={ri} className={ri % 2 === 0 ? 'bg-white' : 'bg-gray-50/30'}>
+                {row.map((cell, ci) => (
+                  <td key={ci} className={`px-4 py-2.5 border-b border-gray-100 ${COL_COLORS[ci] ?? 'text-gray-600'}`}>
+                    {cell}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }
