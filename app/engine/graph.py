@@ -1469,7 +1469,7 @@ async def run_debate_with_graph(
 
     record_debate_complete(
         language=language,
-        complexity=complexity.value,
+        complexity=complexity.value if not is_flash else "simple",
         rounds=final_round,
         converged=is_converged,
         duration_s=elapsed_ms / 1000,

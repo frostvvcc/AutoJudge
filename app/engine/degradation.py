@@ -152,6 +152,7 @@ class DegradationManager:
         # L1: Reduced attackers — NO on_progress to avoid "restart" illusion
         try:
             reduced_config = DebateConfig(
+                mode=config.mode,
                 max_rounds=2,
                 attackers=["correctness"],
                 model=config.model,
@@ -173,6 +174,7 @@ class DegradationManager:
         # L2: Single agent generation, no debate
         try:
             no_debate_config = DebateConfig(
+                mode=config.mode,
                 max_rounds=1,
                 attackers=[],
                 model=config.model,

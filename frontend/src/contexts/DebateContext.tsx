@@ -38,6 +38,7 @@ interface DebateState {
   elapsedMs: number;
   streamingAgent: string | null;
   streamingText: string;
+  mode: 'flash' | 'pro';
   submit: (task: string, language: string, mode?: 'flash' | 'pro') => void;
   skipAttacker: (attacker: string) => void;
   stop: () => void;
@@ -69,6 +70,7 @@ export function DebateProvider({ children }: { children: ReactNode }) {
   const [elapsedMs, setElapsedMs] = useState(0);
   const [streamingAgent, setStreamingAgent] = useState<string | null>(null);
   const [streamingText, setStreamingText] = useState('');
+  const [mode, setMode] = useState<'flash' | 'pro'>('pro');
 
   const wsSendRef = useRef<(data: Record<string, unknown>) => void>(() => {});
 
@@ -237,6 +239,7 @@ export function DebateProvider({ children }: { children: ReactNode }) {
         wsRef.current = null;
       }
 
+      setMode(mode);
       setStatus('connecting');
       setMessages([]);
       setCurrentRound(0);
@@ -338,6 +341,7 @@ export function DebateProvider({ children }: { children: ReactNode }) {
     setElapsedMs(0);
     setStreamingAgent(null);
     setStreamingText('');
+    setMode('pro');
   }, [stopTimer]);
 
   const respondToInterrupt = useCallback((response: Record<string, unknown>) => {
@@ -360,6 +364,7 @@ export function DebateProvider({ children }: { children: ReactNode }) {
         elapsedMs,
         streamingAgent,
         streamingText,
+        mode,
         submit,
         skipAttacker,
         stop,

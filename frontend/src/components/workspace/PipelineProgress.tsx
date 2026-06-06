@@ -81,7 +81,7 @@ export default function PipelineProgress({
           const isCompleted = !isError && i < activeIdx;
           const isCurrent = !isError && i === activeIdx;
           const isSelected = selectedPhase === p.key || (selectedPhase === null && isCurrent);
-          const isClickable = isCompleted || isCurrent;
+          const isClickable = !isFlash && (isCompleted || isCurrent);
 
           let label = p.label;
           if (p.key === 'debate' && currentRound > 0) {
