@@ -693,30 +693,42 @@ function PlanInteractionCard({
 }) {
   const [feedback, setFeedback] = useState('');
   const [mode, setMode] = useState<'select' | 'chat'>('select');
+  const [selectedPlan, setSelectedPlan] = useState<number | null>(null);
 
   const planContent = typeof interruptData.content === 'string' ? interruptData.content : '';
 
   return (
-    <div className="rounded-xl border-2 border-blue-300 bg-blue-50 p-5 space-y-4">
-      <div className="flex items-center gap-2">
-        <span className="text-xl">🎯</span>
-        <h3 className="text-sm font-bold text-blue-700">请选择方案</h3>
-        <span className="text-xs text-blue-400">
-          第 {(interruptData.round ?? 0) + 1}/{interruptData.max_rounds ?? 7} 轮
-        </span>
+    <div className="rounded-xl border-2 border-blue-300 bg-white p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-xl">🎯</span>
+          <h3 className="text-sm font-bold text-blue-700">请选择方案</h3>
+          <span className="text-xs text-blue-400">
+            点击方案卡片选择 · 第 {(interruptData.round ?? 0) + 1}/{interruptData.max_rounds ?? 7} 轮
+          </span>
+        </div>
       </div>
 
-      {/* Render the actual plan content */}
       {planContent && (
-        <PlanDisplayCard content={`[方案设计] ${planContent}`} />
+        <PlanDisplayCard
+          content={`[方案设计] ${planContent}`}
+          selectable
+          selectedIndex={selectedPlan}
+          onSelect={setSelectedPlan}
+        />
       )}
 
-      <div className="flex gap-3">
+      <div className="flex gap-3 pt-2 border-t border-gray-100">
         <button
-          onClick={() => onRespond({ action: 'select' })}
-          className="flex-1 px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-sm font-medium rounded-lg transition-colors"
+          onClick={() => onRespond({ action: 'select', plan_index: selectedPlan })}
+          disabled={selectedPlan === null}
+          className={`flex-1 px-4 py-2.5 text-sm font-medium rounded-lg transition-all ${
+            selectedPlan !== null
+              ? 'bg-blue-600 hover:bg-blue-500 text-white shadow-sm'
+              : 'bg-gray-200 text-gray-400 cursor-not-allowed'
+          }`}
         >
-          选择当前方案
+          {selectedPlan !== null ? `确认选择方案 ${String.fromCharCode(65 + selectedPlan)}` : '请先点击上方卡片选择'}
         </button>
         <button
           onClick={() => onRespond({ action: 'auto_select' })}
