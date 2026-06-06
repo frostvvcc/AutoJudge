@@ -94,6 +94,7 @@ export type DebatePhase =
   | 'arbitration'
   | 'fixing'
   | 'judging'
+  | 'user_decision'
   | 'done'
   | 'error';
 

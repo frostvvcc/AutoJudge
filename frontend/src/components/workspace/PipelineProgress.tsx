@@ -13,7 +13,8 @@ const PHASES: { key: DebatePhase; label: string }[] = [
   { key: 'debate', label: '辩论' },
   { key: 'arbitration', label: '仲裁' },
   { key: 'fixing', label: '修复' },
-  { key: 'judging', label: '报告' },
+  { key: 'judging', label: '评审' },
+  { key: 'user_decision', label: '用户确认' },
   { key: 'done', label: '完成' },
 ];
 

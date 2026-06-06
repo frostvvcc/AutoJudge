@@ -103,6 +103,8 @@ class DebateState(TypedDict):
     selected_plan: str
     config: dict
     enable_interrupt: bool
+    retry_count: int
+    user_decision: str
 
 
 # ─── Shared agent instances ─────────────────────────────────────────────────
@@ -846,11 +848,214 @@ async def final_fix_node(state: DebateState) -> dict:
 
 async def judge_node(state: DebateState) -> dict:
     ctx, budget = _build_context(state)
+
+    await _notify({"type": "phase_change", "phase": "judging"})
+    await _notify({"type": "agent_start", "agent": "judge"})
+
     report = await judge_agent.summarize(ctx, budget)
     return {
         "judge_report": report,
         "budget_spent": budget.spent,
     }
+
+
+# ─── Resolution loop nodes ────────────────────────────────────────────────
+
+MAX_RESOLUTION_RETRIES = 2
+RETRY_BUDGET_RESERVE = 0.15
+
+
+async def resolution_check_node(state: DebateState) -> dict:
+    """Check if Judge found unresolved issues. Route to retry, user decision, or done."""
+    judge_report = state.get("judge_report", {})
+    unresolved = judge_report.get("unresolved_issues", [])
+    retry_count = state.get("retry_count", 0)
+
+    if not unresolved:
+        await _notify({
+            "type": "status",
+            "content": "所有问题已解决，交付完成代码。",
+        })
+        return {"user_decision": "all_resolved"}
+
+    budget_total = state.get("budget_total", 100_000)
+    budget_spent = state.get("budget_spent", 0)
+    budget_remaining_ratio = (budget_total - budget_spent) / max(budget_total, 1)
+    has_budget = budget_remaining_ratio > RETRY_BUDGET_RESERVE
+    can_retry = retry_count < MAX_RESOLUTION_RETRIES and has_budget
+
+    if can_retry:
+        await _notify({
+            "type": "status",
+            "content": (
+                f"Judge 发现 {len(unresolved)} 个未解决问题，"
+                f"自动进入聚焦修复（第 {retry_count + 1}/{MAX_RESOLUTION_RETRIES} 次）..."
+            ),
+        })
+        return {"user_decision": "auto_retry"}
+
+    await _notify({
+        "type": "status",
+        "content": (
+            f"仍有 {len(unresolved)} 个未解决问题，"
+            f"{'重试次数已用完' if retry_count >= MAX_RESOLUTION_RETRIES else '预算不足'}。"
+        ),
+    })
+    return {"user_decision": "needs_user_decision"}
+
+
+def _resolution_check_edge(state: DebateState) -> str:
+    decision = state.get("user_decision", "all_resolved")
+    if decision == "all_resolved":
+        return "done"
+    if decision == "auto_retry":
+        return "focused_retry"
+    return "user_decision"
+
+
+async def focused_retry_node(state: DebateState) -> dict:
+    """Targeted fix for unresolved issues — only relevant attackers verify."""
+    ctx, budget = _build_context(state)
+    judge_report = state.get("judge_report", {})
+    unresolved = judge_report.get("unresolved_issues", [])
+    retry_count = state.get("retry_count", 0)
+
+    await _notify({"type": "phase_change", "phase": "fixing"})
+
+    # Build focused fix prompt from unresolved issues
+    issue_list = "\n".join(
+        f"{i+1}. {item.get('issue', '')} — 当前状态: {item.get('current_status', '?')} "
+        f"(影响: {item.get('impact', '?')})"
+        for i, item in enumerate(unresolved)
+    )
+
+    fix_prompt = (
+        f"Judge 评审发现以下 {len(unresolved)} 个问题仍未解决。\n"
+        f"请只针对这些问题修复，不要改动其他部分。\n"
+        f"提交前用 run_code_snippet 自测。\n\n"
+        f"{issue_list}"
+    )
+
+    await _notify({"type": "agent_start", "agent": "coder"})
+    start = time.monotonic()
+    response = await coder_agent.speak(ctx, fix_prompt, budget)
+    record_agent_call("coder", response.tokens_used, time.monotonic() - start)
+
+    new_code = response.code or state.get("current_code", "")
+    fix_msg = {
+        "agent": "coder",
+        "content": f"[聚焦修复 retry {retry_count + 1}] {response.content}",
+        "round": state["round"] + 1,
+        "code": response.code,
+        "structured": response.structured,
+    }
+    await _notify({"type": "message", **fix_msg})
+
+    # Determine which attackers need to verify (based on unresolved issue categories)
+    categories_needed = set()
+    for item in unresolved:
+        issue_text = (item.get("issue", "") + item.get("suggestion", "")).lower()
+        if any(kw in issue_text for kw in ("安全", "注入", "xss", "认证", "密码", "加密", "security")):
+            categories_needed.add("security")
+        if any(kw in issue_text for kw in ("性能", "复杂度", "内存", "缓存", "performance", "o(n")):
+            categories_needed.add("performance")
+        if any(kw in issue_text for kw in ("边界", "空", "null", "并发", "逻辑", "correctness")):
+            categories_needed.add("correctness")
+
+    if not categories_needed:
+        categories_needed = {"correctness"}
+
+    # Run only relevant attackers for verification
+    verify_state = {**state, "current_code": new_code, "round": state["round"] + 1}
+    agents_map = {
+        "security": (security_agent, "security"),
+        "performance": (performance_agent, "performance"),
+        "correctness": (correctness_agent, "correctness"),
+    }
+
+    verify_msgs = [fix_msg]
+
+    async def verify_with_attacker(name, agent_instance):
+        verify_prompt = (
+            f"Coder 刚刚修复了以下问题，请验证修复是否有效：\n{issue_list}\n\n"
+            f"如果问题已解决，stance 设为 satisfied。如果仍有问题，指出。"
+        )
+        try:
+            await _notify({"type": "agent_start", "agent": name})
+            s = time.monotonic()
+            resp = await agent_instance.speak(ctx, verify_prompt, budget)
+            record_agent_call(name, resp.tokens_used, time.monotonic() - s)
+            return {
+                "agent": name,
+                "content": f"[聚焦验证] {resp.content}",
+                "round": state["round"] + 1,
+                "structured": resp.structured,
+            }
+        except Exception as e:
+            logger.warning("focused_verify_%s_failed error=%s", name, e)
+            return None
+
+    verify_results = await asyncio.gather(*[
+        verify_with_attacker(name, agents_map[name][0])
+        for name in categories_needed
+        if name in agents_map
+    ])
+
+    for msg in verify_results:
+        if msg:
+            verify_msgs.append(msg)
+            await _notify({"type": "message", **msg})
+
+    return {
+        "current_code": new_code,
+        "messages": verify_msgs,
+        "budget_spent": budget.spent,
+        "retry_count": retry_count + 1,
+        "judge_report": {},
+    }
+
+
+async def user_decision_node(state: DebateState) -> dict:
+    """When retries exhausted, let user decide: accept, retry with context, or stop."""
+    judge_report = state.get("judge_report", {})
+    unresolved = judge_report.get("unresolved_issues", [])
+
+    await _notify({"type": "phase_change", "phase": "user_decision"})
+
+    if state.get("enable_interrupt"):
+        user_input = interrupt({
+            "type": "resolution_decision",
+            "unresolved_issues": unresolved,
+            "retry_count": state.get("retry_count", 0),
+            "options": [
+                {"action": "accept", "label": "接受当前结果"},
+                {"action": "retry_with_context", "label": "补充上下文后重试"},
+                {"action": "stop", "label": "停止，手动修复"},
+            ],
+        })
+
+        if user_input and isinstance(user_input, dict):
+            action = user_input.get("action", "accept")
+
+            if action == "retry_with_context":
+                extra = user_input.get("context", "")
+                return {
+                    "extra_context": extra,
+                    "user_decision": "auto_retry",
+                    "retry_count": state.get("retry_count", 0),
+                }
+
+            if action == "stop":
+                return {"user_decision": "user_stopped"}
+
+    return {"user_decision": "user_accepted"}
+
+
+def _user_decision_edge(state: DebateState) -> str:
+    decision = state.get("user_decision", "user_accepted")
+    if decision == "auto_retry":
+        return "focused_retry"
+    return "done"
 
 
 # ─── Graph builder ──────────────────────────────────────────────────────────
@@ -870,6 +1075,9 @@ def build_debate_graph():
     graph.add_node("arbitration", arbitration_node)
     graph.add_node("final_fix", final_fix_node)
     graph.add_node("judge", judge_node)
+    graph.add_node("resolution_check", resolution_check_node)
+    graph.add_node("focused_retry", focused_retry_node)
+    graph.add_node("user_decision", user_decision_node)
 
     graph.set_entry_point("plan")
 
@@ -903,7 +1111,30 @@ def build_debate_graph():
     )
 
     graph.add_edge("final_fix", "judge")
-    graph.add_edge("judge", END)
+
+    # Resolution loop: judge → resolution_check → (retry → judge | user_decision | done)
+    graph.add_edge("judge", "resolution_check")
+
+    graph.add_conditional_edges(
+        "resolution_check",
+        _resolution_check_edge,
+        {
+            "done": END,
+            "focused_retry": "focused_retry",
+            "user_decision": "user_decision",
+        },
+    )
+
+    graph.add_edge("focused_retry", "judge")
+
+    graph.add_conditional_edges(
+        "user_decision",
+        _user_decision_edge,
+        {
+            "focused_retry": "focused_retry",
+            "done": END,
+        },
+    )
 
     return graph
 
@@ -998,6 +1229,8 @@ async def run_debate_with_graph(
             "skip_cross_review": config.skip_cross_review,
         },
         "enable_interrupt": False,
+        "retry_count": 0,
+        "user_decision": "",
     }
 
     # Inject Memory context into agent instances (via shared context patterns)
