@@ -98,16 +98,16 @@ export default function RegisterPage() {
             <h2 className="text-xl font-semibold text-gray-900 text-center">注册</h2>
 
             {error && (
-              <div className="bg-red-900/30 border border-red-800 rounded-lg px-4 py-3 flex items-start gap-2">
-                <svg className="w-4 h-4 text-red-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 flex items-start gap-2">
+                <svg className="w-4 h-4 text-red-500 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
                 </svg>
-                <span className="text-sm text-red-400">{error}</span>
+                <span className="text-sm text-red-600">{error}</span>
               </div>
             )}
 
             <div>
-              <label htmlFor="reg-username" className="block text-sm text-gray-400 mb-1.5">用户名</label>
+              <label htmlFor="reg-username" className="block text-sm text-gray-600 mb-1.5">用户名</label>
               <input
                 id="reg-username" type="text" autoComplete="username"
                 value={username} onChange={(e) => setUsername(e.target.value)}
@@ -117,7 +117,7 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <label htmlFor="reg-email" className="block text-sm text-gray-400 mb-1.5">邮箱</label>
+              <label htmlFor="reg-email" className="block text-sm text-gray-600 mb-1.5">邮箱</label>
               <input
                 id="reg-email" type="email" autoComplete="email"
                 value={email} onChange={(e) => setEmail(e.target.value)}
@@ -127,7 +127,7 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <label htmlFor="reg-password" className="block text-sm text-gray-400 mb-1.5">密码</label>
+              <label htmlFor="reg-password" className="block text-sm text-gray-600 mb-1.5">密码</label>
               <div className="relative">
                 <input
                   id="reg-password" type={showPw ? 'text' : 'password'} autoComplete="new-password"
@@ -154,7 +154,7 @@ export default function RegisterPage() {
             </div>
 
             <div>
-              <label htmlFor="reg-confirm" className="block text-sm text-gray-400 mb-1.5">确认密码</label>
+              <label htmlFor="reg-confirm" className="block text-sm text-gray-600 mb-1.5">确认密码</label>
               <input
                 id="reg-confirm" type="password" autoComplete="new-password"
                 value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
@@ -179,7 +179,7 @@ export default function RegisterPage() {
 
             <p className="text-center text-sm text-gray-500">
               已有账号？{' '}
-              <Link to="/login" className="text-blue-400 hover:text-blue-300 transition-colors">
+              <Link to="/login" className="text-blue-600 hover:text-blue-500 transition-colors">
                 去登录
               </Link>
             </p>

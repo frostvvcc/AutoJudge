@@ -37,7 +37,7 @@ export default function QualityReportPanel({ report, confidence }: Props) {
       <div className="text-center pb-3 border-b border-gray-200">
         <div className="text-2xl mb-1">
           {Array.from({ length: 5 }, (_, i) => (
-            <span key={i} className={i < stars ? 'text-yellow-400' : 'text-gray-700'}>★</span>
+            <span key={i} className={i < stars ? 'text-yellow-400' : 'text-gray-200'}>★</span>
           ))}
         </div>
         <p className="text-sm font-medium text-gray-700">{starLabel}</p>
@@ -48,7 +48,7 @@ export default function QualityReportPanel({ report, confidence }: Props) {
       {/* Resolved issues */}
       {report.resolved_issues.length > 0 && (
         <div>
-          <h4 className="text-xs font-medium text-green-400 mb-2">✅ 已解决</h4>
+          <h4 className="text-xs font-medium text-green-600 mb-2">✅ 已解决</h4>
           <ul className="space-y-1">
             {report.resolved_issues.map((issue, i) => (
               <li key={i} className="text-xs text-gray-600 flex items-start gap-1.5">
@@ -63,14 +63,14 @@ export default function QualityReportPanel({ report, confidence }: Props) {
       {/* Unresolved issues */}
       {report.unresolved_issues.length > 0 && (
         <div>
-          <h4 className="text-xs font-medium text-red-400 mb-2">🔴 未完全解决</h4>
+          <h4 className="text-xs font-medium text-red-600 mb-2">🔴 未完全解决</h4>
           <div className="space-y-2">
             {report.unresolved_issues.map((item, i) => (
-              <div key={i} className="bg-red-900/10 border border-red-900/30 rounded p-2">
-                <p className="text-xs font-medium text-red-300">{item.issue}</p>
-                <p className="text-xs text-gray-400 mt-1">状态：{item.current_status}</p>
-                <p className="text-xs text-gray-400">影响：{item.impact}</p>
-                <p className="text-xs text-blue-400 mt-1">建议：{item.suggestion}</p>
+              <div key={i} className="bg-red-50 border border-red-200 rounded p-2">
+                <p className="text-xs font-medium text-red-700">{item.issue}</p>
+                <p className="text-xs text-gray-500 mt-1">状态：{item.current_status}</p>
+                <p className="text-xs text-gray-500">影响：{item.impact}</p>
+                <p className="text-xs text-blue-600 mt-1">建议：{item.suggestion}</p>
               </div>
             ))}
           </div>

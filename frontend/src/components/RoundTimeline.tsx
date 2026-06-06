@@ -76,7 +76,7 @@ export default function RoundTimeline({
             {!isLast && (
               <div
                 className={`w-0.5 h-6 ${
-                  isCompleted ? 'bg-green-500/50' : 'bg-gray-800'
+                  isCompleted ? 'bg-green-300' : 'bg-gray-200'
                 }`}
               />
             )}

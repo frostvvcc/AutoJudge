@@ -48,9 +48,9 @@ function splitPlans(raw: string): { intro: string; plans: { label: string; body:
 }
 
 const PLAN_COLORS = [
-  { border: 'border-blue-500', bg: 'bg-blue-500/5', badge: 'bg-blue-900/60 text-blue-300', icon: 'A' },
-  { border: 'border-emerald-500', bg: 'bg-emerald-500/5', badge: 'bg-emerald-900/60 text-emerald-300', icon: 'B' },
-  { border: 'border-purple-500', bg: 'bg-purple-500/5', badge: 'bg-purple-900/60 text-purple-300', icon: 'C' },
+  { border: 'border-blue-300', bg: 'bg-blue-50', badge: 'bg-blue-100 text-blue-700', icon: 'A' },
+  { border: 'border-emerald-300', bg: 'bg-emerald-50', badge: 'bg-emerald-100 text-emerald-700', icon: 'B' },
+  { border: 'border-purple-300', bg: 'bg-purple-50', badge: 'bg-purple-100 text-purple-700', icon: 'C' },
 ];
 
 export default function PlanDisplayCard({ content }: Props) {

@@ -16,10 +16,10 @@ export default function AgentStatusBar({ activeAgents }: Props) {
           <div key={name} className="flex items-center gap-1.5">
             <div
               className={`w-2.5 h-2.5 rounded-full transition-all ${
-                isActive ? `${dotClass} animate-pulse scale-110` : 'bg-gray-700'
+                isActive ? `${dotClass} animate-pulse scale-110` : 'bg-gray-300'
               }`}
             />
-            <span className={`text-xs ${isActive ? 'text-gray-200' : 'text-gray-600'}`}>
+            <span className={`text-xs ${isActive ? 'text-gray-800 font-medium' : 'text-gray-500'}`}>
               {AGENT_LABELS[name] ?? name}
             </span>
           </div>

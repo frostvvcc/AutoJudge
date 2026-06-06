@@ -96,7 +96,7 @@ export default function CodeEvolution({ versions, language }: Props) {
   return (
     <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
       {/* Header with version tabs */}
-      <div className="flex items-center gap-1 px-4 py-3 border-b border-gray-200 bg-gray-900/80">
+      <div className="flex items-center gap-1 px-4 py-3 border-b border-gray-200 bg-gray-50">
         <div className="flex items-center gap-2 mr-3">
           <svg className="w-4 h-4 text-blue-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M17.25 6.75L22.5 12l-5.25 5.25m-10.5 0L1.5 12l5.25-5.25m7.5-3l-4.5 16.5" />
@@ -160,9 +160,9 @@ export default function CodeEvolution({ versions, language }: Props) {
                   key={i}
                   className={
                     line.type === 'added'
-                      ? 'bg-green-900/15'
+                      ? 'bg-green-50'
                       : line.type === 'removed'
-                        ? 'bg-red-900/15'
+                        ? 'bg-red-50'
                         : ''
                   }
                 >

@@ -86,14 +86,14 @@ export default function HistoryPage() {
         {(debate.status === 'running' || debate.status === 'connecting') && (
           <Link
             to="/workspace/live"
-            className="block bg-blue-900/30 border border-blue-800 rounded-lg p-4 hover:bg-blue-900/40 transition-colors"
+            className="block bg-blue-50 border border-blue-200 rounded-lg p-4 hover:bg-blue-100 transition-colors"
           >
             <div className="flex items-center gap-3">
               <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-              <span className="text-sm text-blue-300">
+              <span className="text-sm text-blue-700">
                 有任务正在生成中 — {debate.statusText || '处理中'}
               </span>
-              <span className="text-xs text-blue-400 ml-auto">点击查看 &rarr;</span>
+              <span className="text-xs text-blue-600 ml-auto">点击查看 &rarr;</span>
             </div>
           </Link>
         )}
@@ -214,7 +214,7 @@ export default function HistoryPage() {
                     <button
                       onClick={() => handleDelete(item.sid)}
                       disabled={deleting === item.sid}
-                      className="px-3 py-1 text-xs text-gray-600 hover:text-red-400 hover:bg-red-900/20 rounded transition-colors"
+                      className="px-3 py-1 text-xs text-gray-500 hover:text-red-600 hover:bg-red-50 rounded transition-colors"
                     >
                       {deleting === item.sid ? '...' : '删除'}
                     </button>

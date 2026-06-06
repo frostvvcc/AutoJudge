@@ -27,13 +27,13 @@ export default function App() {
           </div>
           <div className="flex items-center gap-4">
             {(debate.status === 'running' || debate.status === 'connecting') && (
-              <span className="text-sm text-yellow-400 animate-pulse">
+              <span className="text-sm text-yellow-600 animate-pulse">
                 {debate.statusText}
               </span>
             )}
             <button
               onClick={debate.reset}
-              className="text-sm text-blue-400 font-medium hover:text-blue-300 transition-colors"
+              className="text-sm text-blue-600 font-medium hover:text-blue-500 transition-colors"
             >
               新任务
             </button>
@@ -44,7 +44,7 @@ export default function App() {
               历史记录
             </Link>
             <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-full bg-gray-700 flex items-center justify-center text-xs text-gray-900 font-medium">
+              <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-xs text-white font-medium">
                 {user?.username?.[0]?.toUpperCase()}
               </div>
               <span className="text-sm text-gray-600">{user?.username}</span>
@@ -86,7 +86,7 @@ export default function App() {
                     </button>
                     <button
                       onClick={debate.stop}
-                      className="px-3 py-1 text-xs bg-red-900/50 hover:bg-red-800/50 rounded border border-red-800"
+                      className="px-3 py-1 text-xs bg-red-50 hover:bg-red-100 rounded border border-red-200 text-red-600"
                     >
                       终止
                     </button>
@@ -132,8 +132,8 @@ export default function App() {
         )}
 
         {debate.error && (
-          <div className="bg-red-900/30 border border-red-800 rounded-lg p-4 flex items-center justify-between">
-            <p className="text-red-400">{debate.error}</p>
+          <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-center justify-between">
+            <p className="text-red-600">{debate.error}</p>
             <button
               onClick={debate.reset}
               className="shrink-0 ml-4 px-4 py-1.5 bg-gray-100 hover:bg-gray-100 rounded text-sm text-gray-600 transition-colors"

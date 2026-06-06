@@ -93,12 +93,12 @@ function MessageBubble({ message }: { message: DebateMessage }) {
         <div className={`w-2 h-2 rounded-full ${dotClass}`} />
         <span className="text-xs font-semibold text-gray-600">{label}</span>
         {isRebuttal && (
-          <span className="text-xs px-1.5 py-0.5 bg-yellow-900/50 text-yellow-400 rounded">
+          <span className="text-xs px-1.5 py-0.5 bg-yellow-50 text-yellow-600 rounded border border-yellow-200">
             反驳
           </span>
         )}
         {isCrossReview && (
-          <span className="text-xs px-1.5 py-0.5 bg-purple-900/50 text-purple-400 rounded">
+          <span className="text-xs px-1.5 py-0.5 bg-purple-50 text-purple-600 rounded border border-purple-200">
             交叉审阅
           </span>
         )}

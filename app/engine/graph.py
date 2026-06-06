@@ -997,7 +997,7 @@ async def run_debate_with_graph(
             "max_tokens": config.max_tokens,
             "skip_cross_review": config.skip_cross_review,
         },
-        "enable_interrupt": interrupt_handler is not None,
+        "enable_interrupt": False,
     }
 
     # Inject Memory context into agent instances (via shared context patterns)
@@ -1023,27 +1023,34 @@ async def run_debate_with_graph(
         compiled = graph.compile(checkpointer=checkpointer)
         thread_id = str(uuid.uuid4())
         graph_config = {"configurable": {"thread_id": thread_id}}
-        # Interrupt-aware execution loop
+        # Interrupt-aware execution loop (LangGraph 1.x compatible).
+        # In LangGraph >=1.0, ainvoke() returns normally at interrupt
+        # points instead of raising GraphInterrupt. Detect pending
+        # interrupts via get_state().next.
         invoke_input = initial_state
         final_state = None
         max_interrupts = 20
 
         for _interrupt_round in range(max_interrupts):
-            try:
-                final_state = await compiled.ainvoke(invoke_input, graph_config)
+            final_state = await compiled.ainvoke(invoke_input, graph_config)
+            snapshot = await compiled.aget_state(graph_config)
+            if not snapshot.next:
                 break
-            except GraphInterrupt as gi:
-                if not interrupt_handler:
-                    invoke_input = Command(resume=None)
-                    continue
-                payload = gi.args[0] if gi.args else {}
-                user_response = await interrupt_handler(payload)
-                invoke_input = Command(resume=user_response)
+            interrupt_payload = {}
+            if snapshot.tasks:
+                for task in snapshot.tasks:
+                    if hasattr(task, "interrupts") and task.interrupts:
+                        interrupt_payload = task.interrupts[0].value
+                        break
+            if interrupt_handler:
+                user_response = await interrupt_handler(interrupt_payload)
+            else:
+                user_response = None
+            invoke_input = Command(resume=user_response)
 
         if final_state is None:
-            final_state = await compiled.get_state(graph_config)
-            if hasattr(final_state, "values"):
-                final_state = final_state.values
+            snapshot = await compiled.aget_state(graph_config)
+            final_state = snapshot.values if hasattr(snapshot, "values") else {}
 
     # --- Post-processing: TestRunner ---
     final_code = final_state.get("current_code", "")

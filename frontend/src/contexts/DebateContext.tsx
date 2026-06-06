@@ -83,12 +83,27 @@ export function DebateProvider({ children }: { children: ReactNode }) {
         );
         break;
 
-      case 'result':
-        setResult(event.data ?? null);
-        setCurrentPhase('done');
-        setStatus('done');
-        setStatusText('完成');
+      case 'result': {
+        const resultData = event.data ?? null;
+        setResult(resultData);
+        const rounds = resultData?.metrics?.total_rounds ?? resultData?.debate?.total_rounds ?? 0;
+        const hasCode = Boolean(resultData?.code);
+        const degraded = resultData?.metadata?.degradation_level;
+        if (!hasCode && rounds === 0) {
+          const reason = degraded
+            ? `服务降级 (${degraded})，未生成代码`
+            : resultData?.convergence_reason || '任务未能正常完成';
+          setError(reason);
+          setCurrentPhase('error');
+          setStatus('error');
+          setStatusText(reason);
+        } else {
+          setCurrentPhase('done');
+          setStatus('done');
+          setStatusText('完成');
+        }
         break;
+      }
 
       case 'phase_change':
         setCurrentPhase(event.phase ?? 'idle');
@@ -106,6 +121,15 @@ export function DebateProvider({ children }: { children: ReactNode }) {
           `仲裁完成: ${event.overall_verdict ?? ''} (${event.disputes_count ?? 0}条争议)`,
         );
         break;
+
+      case 'interrupt': {
+        const payload = (event as unknown as Record<string, unknown>).payload as Record<string, unknown> | undefined;
+        const interruptType = payload?.type as string | undefined;
+        if (interruptType === 'plan_review' || interruptType === 'round_complete' || interruptType === 'arbitration_review' || interruptType === 'strategy_review') {
+          wsSend({ type: 'interrupt_response', data: { action: 'auto_select' } });
+        }
+        break;
+      }
 
       case 'done':
         setStatus('done');

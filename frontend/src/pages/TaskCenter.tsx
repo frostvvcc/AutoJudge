@@ -76,12 +76,12 @@ export default function TaskCenter() {
         {isRunning && (
           <button
             onClick={() => navigate('/workspace/live')}
-            className="w-full bg-blue-900/30 border border-blue-800 rounded-lg p-4 hover:bg-blue-900/40 transition-colors text-left"
+            className="w-full bg-blue-50 border border-blue-200 rounded-lg p-4 hover:bg-blue-100 transition-colors text-left"
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
                 <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
-                <span className="text-sm text-blue-300">
+                <span className="text-sm text-blue-700">
                   任务进行中 — {debate.statusText || '处理中'}
                 </span>
               </div>

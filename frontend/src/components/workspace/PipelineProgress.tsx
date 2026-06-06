@@ -23,14 +23,15 @@ function phaseIndex(phase: DebatePhase): number {
 }
 
 export default function PipelineProgress({ phase, currentRound, maxRounds: _maxRounds, statusText }: Props) {
-  const activeIdx = phase === 'idle' ? -1 : phaseIndex(phase);
+  const isError = phase === 'error';
+  const activeIdx = phase === 'idle' || isError ? -1 : phaseIndex(phase);
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 px-4 py-3">
       <div className="flex items-center gap-1 mb-2 overflow-x-auto">
         {PHASES.map((p, i) => {
-          const isCompleted = i < activeIdx;
-          const isCurrent = i === activeIdx;
+          const isCompleted = !isError && i < activeIdx;
+          const isCurrent = !isError && i === activeIdx;
           let label = p.label;
           if (p.key === 'debate' && (phase === 'debate' || activeIdx > 2)) {
             label = `辩论 R${currentRound}`;
@@ -40,22 +41,25 @@ export default function PipelineProgress({ phase, currentRound, maxRounds: _maxR
               <div
                 className={`px-2 py-1 rounded text-xs whitespace-nowrap ${
                   isCompleted
-                    ? 'bg-green-500/20 text-green-400'
+                    ? 'bg-green-50 text-green-600'
                     : isCurrent
-                      ? 'bg-blue-500/20 text-blue-400 font-semibold'
-                      : 'bg-gray-100 text-gray-600'
+                      ? 'bg-blue-50 text-blue-600 font-semibold'
+                      : 'bg-gray-100 text-gray-500'
                 }`}
               >
                 {isCompleted ? '✓ ' : isCurrent ? '● ' : ''}{label}
               </div>
               {i < PHASES.length - 1 && (
-                <div className={`w-4 h-px mx-0.5 ${isCompleted ? 'bg-green-500/50' : 'bg-gray-700'}`} />
+                <div className={`w-4 h-px mx-0.5 ${isCompleted ? 'bg-green-300' : 'bg-gray-200'}`} />
               )}
             </div>
           );
         })}
       </div>
-      {statusText && (
+      {isError && (
+        <p className="text-xs text-red-500 font-medium">{statusText || '任务异常终止'}</p>
+      )}
+      {!isError && statusText && (
         <p className="text-xs text-gray-500">{statusText}</p>
       )}
     </div>

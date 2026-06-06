@@ -86,16 +86,16 @@ export default function LoginPage() {
             <h2 className="text-xl font-semibold text-gray-900 text-center">登录</h2>
 
             {error && (
-              <div className="bg-red-900/30 border border-red-800 rounded-lg px-4 py-3 flex items-start gap-2">
-                <svg className="w-4 h-4 text-red-400 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-3 flex items-start gap-2">
+                <svg className="w-4 h-4 text-red-500 mt-0.5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                   <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
                 </svg>
-                <span className="text-sm text-red-400">{error}</span>
+                <span className="text-sm text-red-600">{error}</span>
               </div>
             )}
 
             <div>
-              <label htmlFor="login-id" className="block text-sm text-gray-400 mb-1.5">
+              <label htmlFor="login-id" className="block text-sm text-gray-600 mb-1.5">
                 用户名或邮箱
               </label>
               <input
@@ -111,7 +111,7 @@ export default function LoginPage() {
             </div>
 
             <div>
-              <label htmlFor="login-pw" className="block text-sm text-gray-400 mb-1.5">
+              <label htmlFor="login-pw" className="block text-sm text-gray-600 mb-1.5">
                 密码
               </label>
               <div className="relative">
@@ -158,7 +158,7 @@ export default function LoginPage() {
 
             <p className="text-center text-sm text-gray-500">
               还没有账号？{' '}
-              <Link to="/register" className="text-blue-400 hover:text-blue-300 transition-colors">
+              <Link to="/register" className="text-blue-600 hover:text-blue-500 transition-colors">
                 立即注册
               </Link>
             </p>

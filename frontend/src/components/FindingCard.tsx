@@ -8,10 +8,10 @@ export interface Finding {
 }
 
 const SEVERITY_STYLES: Record<Finding['severity'], string> = {
-  critical: 'bg-red-900/50 text-red-400 border-red-700',
-  high: 'bg-orange-900/50 text-orange-400 border-orange-700',
-  medium: 'bg-yellow-900/50 text-yellow-400 border-yellow-700',
-  low: 'bg-gray-100 text-gray-400 border-gray-300',
+  critical: 'bg-red-50 text-red-600 border-red-200',
+  high: 'bg-orange-50 text-orange-600 border-orange-200',
+  medium: 'bg-yellow-50 text-yellow-600 border-yellow-200',
+  low: 'bg-gray-50 text-gray-500 border-gray-200',
 };
 
 const SEVERITY_DOT: Record<Finding['severity'], string> = {

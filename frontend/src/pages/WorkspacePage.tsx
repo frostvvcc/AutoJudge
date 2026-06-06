@@ -13,14 +13,15 @@ import type { DebatePhase, DebateMessage, QualityReport } from '../types/debate'
 
 function inferPhase(status: string, statusText: string): DebatePhase {
   if (status === 'idle') return 'idle';
-  if (status === 'done' || status === 'converged') return 'done';
-  if (status === 'error') return 'error';
+  if (status === 'done' || status === 'converged' || status === 'completed') return 'done';
+  if (status === 'error' || status === 'failed') return 'error';
   const t = statusText.toLowerCase();
-  if (t.includes('方案') || t.includes('plan')) return 'plan';
-  if (t.includes('仲裁') || t.includes('arbitrat')) return 'arbitration';
-  if (t.includes('修复') || t.includes('fix')) return 'fixing';
+  if (t.includes('方案') || t.includes('plan') || status === 'planning') return 'plan';
+  if (t.includes('仲裁') || t.includes('arbitrat') || status === 'arbitrating') return 'arbitration';
+  if (t.includes('修复') || t.includes('fix') || status === 'fixing') return 'fixing';
   if (t.includes('judge') || t.includes('总结') || t.includes('报告')) return 'judging';
   if (t.includes('coder') && !t.includes('attacker')) return 'coding';
+  if (status === 'debating') return 'debate';
   return 'debate';
 }
 
@@ -72,13 +73,8 @@ export default function WorkspacePage() {
       statusText = '历史回放';
 
       const replayStatus = replayData.status;
-      if (replayStatus === 'done' || replayStatus === 'converged') {
-        status = replayStatus;
-        phase = 'done';
-      } else {
-        status = replayStatus;
-        phase = inferPhase(replayStatus, '');
-      }
+      status = replayStatus;
+      phase = inferPhase(replayStatus, '');
 
       confidence = replayData.confidence;
       taskDescription = replayData.task;

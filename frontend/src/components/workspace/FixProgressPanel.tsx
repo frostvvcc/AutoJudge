@@ -23,9 +23,9 @@ interface Props {
 
 const STATUS_STYLES: Record<AttemptStatus, { bg: string; text: string; border: string; label: string }> = {
   pending: { bg: 'bg-gray-100', text: 'text-gray-500', border: 'border-gray-300/40', label: 'Pending' },
-  running: { bg: 'bg-blue-900/30', text: 'text-blue-400', border: 'border-blue-700/40', label: 'Running' },
-  success: { bg: 'bg-green-900/30', text: 'text-green-400', border: 'border-green-700/40', label: 'Success' },
-  failed: { bg: 'bg-red-900/30', text: 'text-red-400', border: 'border-red-700/40', label: 'Failed' },
+  running: { bg: 'bg-blue-50', text: 'text-blue-600', border: 'border-blue-200', label: 'Running' },
+  success: { bg: 'bg-green-50', text: 'text-green-600', border: 'border-green-200', label: 'Success' },
+  failed: { bg: 'bg-red-50', text: 'text-red-600', border: 'border-red-200', label: 'Failed' },
 };
 
 const SEVERITY_DOT: Record<string, string> = {
@@ -43,7 +43,7 @@ export default function FixProgressPanel({ attempts, mustFixItems, currentAttemp
   return (
     <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
       {/* Header */}
-      <div className="px-4 py-3 border-b border-gray-200 bg-gray-900/80">
+      <div className="px-4 py-3 border-b border-gray-200 bg-gray-50">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <svg className="w-4 h-4 text-green-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
@@ -80,7 +80,7 @@ export default function FixProgressPanel({ attempts, mustFixItems, currentAttemp
                 <div
                   key={item.id}
                   className={`flex items-start gap-2 px-2.5 py-1.5 rounded ${
-                    isResolved ? 'bg-green-900/10 border border-green-800/20' : 'bg-gray-50'
+                    isResolved ? 'bg-green-50 border border-green-200' : 'bg-gray-50'
                   }`}
                 >
                   <div className="mt-1 shrink-0">
@@ -134,12 +134,12 @@ export default function FixProgressPanel({ attempts, mustFixItems, currentAttemp
                             ? 'border-green-400 bg-green-400/30'
                             : attempt.status === 'failed'
                               ? 'border-red-400 bg-red-400/30'
-                              : 'border-gray-600 bg-gray-800'
+                              : 'border-gray-300 bg-gray-100'
                       }`}
                     />
                     {!isLast && (
                       <div className={`w-px flex-1 min-h-[24px] ${
-                        attempt.status === 'success' ? 'bg-green-700/50' : 'bg-gray-700/50'
+                        attempt.status === 'success' ? 'bg-green-300' : 'bg-gray-200'
                       }`} />
                     )}
                   </div>

@@ -104,7 +104,11 @@ async def _save_session(
                 "model": config.model,
                 "max_tokens": config.max_tokens,
             },
-            status=DebateStatus.COMPLETED.value,
+            status=(
+                DebateStatus.COMPLETED.value
+                if result.code
+                else DebateStatus.FAILED.value
+            ),
             result_code=result.code or None,
             confidence=result.confidence,
             converged=result.converged,

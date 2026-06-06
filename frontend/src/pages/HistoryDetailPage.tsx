@@ -2,20 +2,20 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
-import { useAuth } from '../contexts/AuthContext';
+import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import NavBar from '../components/NavBar';
 import * as api from '../lib/api';
 import { AGENT_COLORS, AGENT_LABELS } from '../types/debate';
 
 export default function HistoryDetailPage() {
   const { sid } = useParams<{ sid: string }>();
-  const { user, logout } = useAuth();
   const navigate = useNavigate();
 
   const [detail, setDetail] = useState<api.SessionDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [copied, setCopied] = useState(false);
+  const [codeCopied, setCodeCopied] = useState(false);
+  const [copiedMsgIdx, setCopiedMsgIdx] = useState<string | null>(null);
 
   useEffect(() => {
     if (!sid) return;
@@ -27,20 +27,33 @@ export default function HistoryDetailPage() {
       .finally(() => setLoading(false));
   }, [sid]);
 
+  const copyText = (text: string, key: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedMsgIdx(key);
+    setTimeout(() => setCopiedMsgIdx(null), 2000);
+  };
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <p className="text-gray-500">加载中...</p>
+      <div className="min-h-screen bg-gray-50">
+        <NavBar />
+        <div className="flex items-center justify-center py-20">
+          <div className="flex items-center gap-3">
+            <div className="w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+            <span className="text-gray-500 text-sm">加载中...</span>
+          </div>
+        </div>
       </div>
     );
   }
 
   if (error || !detail) {
     return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-red-400 mb-4">{error || '记录不存在'}</p>
-          <Link to="/history" className="text-blue-400 hover:text-blue-300 text-sm">
+      <div className="min-h-screen bg-gray-50">
+        <NavBar />
+        <div className="flex flex-col items-center justify-center py-20 gap-4">
+          <p className="text-red-500 text-sm">{error || '记录不存在'}</p>
+          <Link to="/history" className="text-blue-600 hover:text-blue-500 text-sm">
             返回历史记录
           </Link>
         </div>
@@ -52,11 +65,10 @@ export default function HistoryDetailPage() {
   const summary = detail.summary_json as Record<string, unknown> | null;
 
   const riskColor = (level: string) => {
-    if (level === 'none') return 'text-green-400';
-    if (level === 'low') return 'text-green-400';
-    if (level === 'medium') return 'text-yellow-400';
-    if (level === 'high') return 'text-orange-400';
-    if (level === 'critical') return 'text-red-400';
+    if (level === 'none' || level === 'low') return 'text-green-600';
+    if (level === 'medium') return 'text-yellow-600';
+    if (level === 'high') return 'text-orange-600';
+    if (level === 'critical') return 'text-red-600';
     return 'text-gray-500';
   };
 
@@ -69,72 +81,41 @@ export default function HistoryDetailPage() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <header className="border-b border-gray-200 px-6 py-4">
-        <div className="flex items-center justify-between max-w-7xl mx-auto">
-          <div className="flex items-center gap-3">
-            <Link to="/dashboard" className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg" />
-              <h1 className="text-xl font-bold text-gray-900">AutoJudge</h1>
-            </Link>
-          </div>
-          <div className="flex items-center gap-4">
-            <Link
-              to="/dashboard"
-              className="text-sm text-gray-400 hover:text-gray-900 transition-colors"
-            >
-              新任务
-            </Link>
-            <Link
-              to="/history"
-              className="text-sm text-gray-400 hover:text-gray-900 transition-colors"
-            >
-              历史记录
-            </Link>
-            <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-full bg-gray-700 flex items-center justify-center text-xs text-gray-900 font-medium">
-                {user?.username?.[0]?.toUpperCase()}
-              </div>
-              <span className="text-sm text-gray-600">{user?.username}</span>
-            </div>
+      <NavBar />
+
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+        {/* Task Info */}
+        <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+          <div className="flex items-start justify-between gap-4">
+            <p className="text-gray-800 leading-relaxed">{detail.task}</p>
             <button
-              onClick={() => {
-                logout();
-                navigate('/login');
-              }}
-              className="text-sm text-gray-500 hover:text-red-400 transition-colors"
+              onClick={() => navigate('/history')}
+              className="shrink-0 text-xs text-gray-400 hover:text-gray-600 transition-colors"
             >
-              退出
+              返回列表
             </button>
           </div>
-        </div>
-      </header>
-
-      <main className="max-w-7xl mx-auto px-6 py-6 space-y-6">
-        {/* Task Info */}
-        <div className="bg-white border border-gray-200 rounded-lg p-5">
-          <p className="text-gray-800 mb-3">{detail.task}</p>
-          <div className="flex flex-wrap gap-3 text-xs text-gray-500">
-            <span className="px-2 py-0.5 bg-gray-100 rounded text-gray-400">
+          <div className="flex flex-wrap gap-3 mt-3 text-xs text-gray-500">
+            <span className="px-2 py-0.5 bg-blue-50 rounded text-blue-600 font-medium">
               {detail.language}
             </span>
             {detail.framework && (
-              <span className="px-2 py-0.5 bg-gray-100 rounded text-gray-400">
+              <span className="px-2 py-0.5 bg-gray-100 rounded text-gray-500">
                 {detail.framework}
               </span>
             )}
             <span>
               {detail.converged ? (
-                <span className="text-green-400">
+                <span className="text-green-600">
                   共识达成 — {detail.convergence_reason}
                 </span>
               ) : (
-                <span className="text-yellow-400">未达共识</span>
+                <span className="text-yellow-600">未达共识</span>
               )}
             </span>
             <span>置信度 {(detail.confidence * 100).toFixed(0)}%</span>
             <span>{detail.total_rounds} 轮</span>
-            <span>{detail.total_tokens} tokens</span>
+            <span>{detail.total_tokens.toLocaleString()} tokens</span>
             <span>${detail.cost_usd.toFixed(4)}</span>
             <span>{(detail.total_latency_ms / 1000).toFixed(1)}s</span>
           </div>
@@ -149,26 +130,55 @@ export default function HistoryDetailPage() {
                 <div key={round}>
                   {Number(round) > 0 && (
                     <div className="flex items-center gap-2 mb-3">
-                      <div className="h-px flex-1 bg-gray-100" />
-                      <span className="text-xs text-gray-500 font-medium">
+                      <div className="h-px flex-1 bg-gray-200" />
+                      <span className="text-xs text-gray-400 font-medium">
                         Round {round}
                       </span>
-                      <div className="h-px flex-1 bg-gray-100" />
+                      <div className="h-px flex-1 bg-gray-200" />
                     </div>
                   )}
                   {msgs.map((msg, idx) => {
-                    const colors = AGENT_COLORS[msg.agent] || 'border-gray-500 bg-gray-500/10';
+                    const colors = AGENT_COLORS[msg.agent] || 'border-gray-300 bg-gray-50';
+                    const msgKey = `${round}-${idx}`;
                     return (
                       <div
-                        key={`${round}-${idx}`}
-                        className={`border-l-2 ${colors} rounded-r-lg px-4 py-3 mb-2`}
+                        key={msgKey}
+                        className={`group border-l-2 ${colors} rounded-r-lg px-4 py-3 mb-2 relative`}
                       >
-                        <div className="text-xs font-medium text-gray-400 mb-1">
-                          {AGENT_LABELS[msg.agent] || msg.agent}
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-xs font-medium text-gray-500">
+                            {AGENT_LABELS[msg.agent] || msg.agent}
+                          </span>
+                          <button
+                            onClick={() => copyText(msg.content, msgKey)}
+                            className="opacity-0 group-hover:opacity-100 text-xs text-gray-400 hover:text-gray-600 transition-all"
+                          >
+                            {copiedMsgIdx === msgKey ? '已复制 ✓' : '复制'}
+                          </button>
                         </div>
                         <div className="text-sm text-gray-700 prose prose-sm max-w-none">
                           <ReactMarkdown>{msg.content}</ReactMarkdown>
                         </div>
+                        {msg.code && (
+                          <div className="mt-2 bg-gray-50 rounded border border-gray-200 overflow-hidden">
+                            <div className="flex items-center justify-between px-3 py-1 border-b border-gray-200">
+                              <span className="text-[10px] text-gray-400">代码</span>
+                              <button
+                                onClick={() => copyText(msg.code!, `code-${msgKey}`)}
+                                className="text-[10px] text-gray-400 hover:text-gray-600"
+                              >
+                                {copiedMsgIdx === `code-${msgKey}` ? '已复制' : '复制'}
+                              </button>
+                            </div>
+                            <SyntaxHighlighter
+                              language={detail.language}
+                              style={oneLight}
+                              customStyle={{ margin: 0, padding: '0.75rem', fontSize: '0.75rem', background: 'transparent', maxHeight: '200px' }}
+                            >
+                              {msg.code}
+                            </SyntaxHighlighter>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
@@ -178,25 +188,25 @@ export default function HistoryDetailPage() {
 
           {/* Right: Code + Risk + Summary */}
           <div className="space-y-4">
-            {/* Code */}
+            {/* Final Code */}
             {detail.result_code && (
-              <div className="bg-white border border-gray-200 rounded-lg overflow-hidden">
-                <div className="px-4 py-2 border-b border-gray-200 flex items-center justify-between">
-                  <span className="text-xs text-gray-400 font-medium">最终代码</span>
+              <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+                <div className="px-4 py-2.5 border-b border-gray-200 flex items-center justify-between">
+                  <span className="text-xs text-gray-500 font-medium">最终代码</span>
                   <button
                     onClick={() => {
                       navigator.clipboard.writeText(detail.result_code || '');
-                      setCopied(true);
-                      setTimeout(() => setCopied(false), 2000);
+                      setCodeCopied(true);
+                      setTimeout(() => setCodeCopied(false), 2000);
                     }}
-                    className="text-xs text-gray-500 hover:text-gray-600 transition-colors"
+                    className="text-xs text-gray-400 hover:text-gray-600 transition-colors"
                   >
-                    {copied ? '已复制 ✓' : '复制'}
+                    {codeCopied ? '已复制 ✓' : '复制代码'}
                   </button>
                 </div>
                 <SyntaxHighlighter
                   language={detail.language}
-                  style={oneDark}
+                  style={oneLight}
                   customStyle={{
                     margin: 0,
                     padding: '1rem',
@@ -212,12 +222,12 @@ export default function HistoryDetailPage() {
 
             {/* Risk */}
             {risk && (
-              <div className="bg-white border border-gray-200 rounded-lg p-4">
-                <h3 className="text-sm font-medium text-gray-600 mb-3">风险评估</h3>
+              <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+                <h3 className="text-sm font-medium text-gray-700 mb-3">风险评估</h3>
                 <div className="space-y-2">
                   {['security', 'performance', 'correctness'].map((dim) => (
                     <div key={dim} className="flex items-center justify-between">
-                      <span className="text-xs text-gray-400 capitalize">{dim}</span>
+                      <span className="text-xs text-gray-500 capitalize">{dim}</span>
                       <span className={`text-xs font-medium ${riskColor(risk[dim] || 'unknown')}`}>
                         {risk[dim] || 'unknown'}
                       </span>
@@ -229,35 +239,38 @@ export default function HistoryDetailPage() {
 
             {/* Summary */}
             {summary && (
-              <div className="bg-white border border-gray-200 rounded-lg p-4">
-                <h3 className="text-sm font-medium text-gray-600 mb-3">辩论摘要</h3>
-                <div className="space-y-2 text-xs text-gray-400">
+              <div className="bg-white border border-gray-200 rounded-xl p-4 shadow-sm">
+                <h3 className="text-sm font-medium text-gray-700 mb-3">辩论摘要</h3>
+                <div className="space-y-2 text-xs text-gray-500">
                   <div className="flex justify-between">
                     <span>提出问题</span>
-                    <span className="text-gray-600">
+                    <span className="text-gray-700 font-medium">
                       {(summary.total_issues_raised as number) ?? 0}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span>已修复</span>
-                    <span className="text-green-400">
+                    <span className="text-green-600 font-medium">
                       {(summary.accepted_and_fixed as number) ?? 0}
                     </span>
                   </div>
                   <div className="flex justify-between">
                     <span>驳回</span>
-                    <span className="text-yellow-400">
+                    <span className="text-yellow-600 font-medium">
                       {(summary.rejected_by_coder as number) ?? 0}
                     </span>
                   </div>
                 </div>
                 {Array.isArray(summary.key_improvements) &&
                   summary.key_improvements.length > 0 && (
-                    <div className="mt-3 pt-3 border-t border-gray-200">
+                    <div className="mt-3 pt-3 border-t border-gray-100">
                       <p className="text-xs text-gray-500 mb-1">关键改进：</p>
-                      <ul className="text-xs text-gray-400 space-y-1">
+                      <ul className="text-xs text-gray-600 space-y-1">
                         {(summary.key_improvements as string[]).map((imp: string, i: number) => (
-                          <li key={i}>- {imp}</li>
+                          <li key={i} className="flex items-start gap-1">
+                            <span className="text-green-500 mt-0.5">•</span>
+                            <span>{imp}</span>
+                          </li>
                         ))}
                       </ul>
                     </div>
