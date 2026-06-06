@@ -117,9 +117,21 @@ export default function AttackResponsePanel({
             !m.content.startsWith('[交叉审阅]'),
           );
           const crossMsgs = msgs.filter((m) => m.content.startsWith('[交叉审阅]'));
+          const isLast = round === debateRounds[debateRounds.length - 1];
           const coderResps = nextRoundResponses(round);
+          const hasFindings = attackerMsgs.some((m) => {
+            const st = m.structured as Record<string, unknown> | undefined;
+            return ((st?.findings as unknown[]) ?? []).length > 0;
+          });
+          const isReviewOnly = !hasFindings;
           const isCollapsible = debateRounds.length > 1;
           const isExpanded = expandedRound === round || !isCollapsible || round === debateRounds[debateRounds.length - 1];
+
+          const roundLabel = isReviewOnly
+            ? `Round ${round} · 复查`
+            : round <= 1
+              ? `Round ${round} · 审查 + 回应`
+              : `Round ${round}`;
 
           return (
             <div key={round} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -128,10 +140,12 @@ export default function AttackResponsePanel({
                 className={`w-full flex items-center justify-between px-4 py-3 ${isCollapsible ? 'hover:bg-gray-50 cursor-pointer' : ''} transition-colors`}
               >
                 <div className="flex items-center gap-3">
-                  <div className="w-8 h-8 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center text-sm font-bold">
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                    isReviewOnly ? 'bg-green-100 text-green-600' : 'bg-purple-100 text-purple-600'
+                  }`}>
                     {round}
                   </div>
-                  <span className="text-sm font-semibold text-gray-700">Round {round}</span>
+                  <span className="text-sm font-semibold text-gray-700">{roundLabel}</span>
                   <RoundSummaryChips messages={msgs} />
                 </div>
                 {isCollapsible && (
@@ -146,9 +160,9 @@ export default function AttackResponsePanel({
                   {attackerMsgs.length > 0 && (
                     <div className="space-y-3">
                       <span className="text-xs font-semibold text-red-500">
-                        {round <= 1 ? '⚔️ Attacker 并行审查' : '⚔️ Attacker 复查修复'}
+                        {isReviewOnly ? '🔍 Attacker 复查结果' : round <= 1 ? '⚔️ Attacker 并行审查' : '⚔️ Attacker 审查'}
                       </span>
-                      <ThreadedDebateView attackerMsgs={attackerMsgs} coderMsgs={[]} nextRoundResponses={coderResps} />
+                      <ThreadedDebateView attackerMsgs={attackerMsgs} nextRoundResponses={hasFindings ? coderResps : undefined} isLastRound={isLast && coderResps.length === 0} />
                     </div>
                   )}
                   {crossMsgs.length > 0 && <CrossReviewCard messages={crossMsgs} />}
@@ -302,31 +316,30 @@ function RoundSummaryChips({ messages }: { messages: DebateMessage[] }) {
 
 function ThreadedDebateView({
   attackerMsgs,
-  coderMsgs,
   nextRoundResponses,
+  isLastRound,
 }: {
   attackerMsgs: DebateMessage[];
-  coderMsgs: DebateMessage[];
+  coderMsgs?: DebateMessage[];
   nextRoundResponses?: Array<Record<string, string>>;
+  isLastRound?: boolean;
 }) {
-  const allResponses: Array<Record<string, string>> = nextRoundResponses ?? [];
-  if (!nextRoundResponses) {
-    for (const m of coderMsgs) {
-      const s = m.structured as Record<string, unknown> | undefined;
-      const resps = (s?.responses as Array<Record<string, string>>) ?? [];
-      allResponses.push(...resps);
+  const allResponses = nextRoundResponses ?? [];
+
+  const respsByAgent: Record<string, Array<Record<string, string>>> = {};
+  for (const r of allResponses) {
+    const ref = (r.finding_ref ?? '').toUpperCase();
+    let agent = '';
+    if (ref.includes('SECURITY')) agent = 'security';
+    else if (ref.includes('PERFORMANCE')) agent = 'performance';
+    else if (ref.includes('CORRECTNESS')) agent = 'correctness';
+    if (agent) {
+      if (!respsByAgent[agent]) respsByAgent[agent] = [];
+      respsByAgent[agent].push(r);
     }
   }
 
-  const findingsByRef: Map<string, { finding: Record<string, string>; agent: string }> = new Map();
-  for (const msg of attackerMsgs) {
-    const s = msg.structured as Record<string, unknown> | undefined;
-    const findings = (s?.findings as Array<Record<string, string>>) ?? [];
-    findings.forEach((f, i) => {
-      const ref = `${msg.agent.toUpperCase()}-${String(i + 1).padStart(3, '0')}`;
-      findingsByRef.set(ref, { finding: f, agent: msg.agent });
-    });
-  }
+  const consumedIndex: Record<string, number> = {};
 
   return (
     <div className="space-y-3">
@@ -336,12 +349,12 @@ function ThreadedDebateView({
         const stance = s?.stance as string | undefined;
         const isSatisfied = stance === 'satisfied';
         const agentIcon = msg.agent === 'security' ? '🔒' : msg.agent === 'performance' ? '⚡' : '✓';
+        const agentResps = respsByAgent[msg.agent] ?? [];
 
         return (
           <div key={`atk-${mi}`} className={`rounded-xl border p-4 transition-all ${
             isSatisfied ? 'border-green-200 bg-green-50/50' : 'border-gray-200 bg-white'
           }`}>
-            {/* Attacker header */}
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
                 <span className="text-lg">{agentIcon}</span>
@@ -360,12 +373,12 @@ function ThreadedDebateView({
               </span>
             </div>
 
-            {/* Findings + threaded coder responses */}
             {findings.length > 0 ? (
               <div className="space-y-2">
                 {findings.map((f, fi) => {
-                  const ref = `${msg.agent.toUpperCase()}-${String(fi + 1).padStart(3, '0')}`;
-                  const coderResp = allResponses.find((r) => r.finding_ref === ref);
+                  const idx = consumedIndex[msg.agent] ?? 0;
+                  const coderResp = agentResps[idx] ?? null;
+                  if (coderResp) consumedIndex[msg.agent] = idx + 1;
 
                   return (
                     <div key={fi} className="space-y-0">
@@ -415,7 +428,9 @@ function ThreadedDebateView({
                         </div>
                       ) : (
                         <div className="rounded-b-lg px-3 py-1.5 border border-gray-200 border-t-0 bg-gray-50">
-                          <span className="text-xs text-gray-400 italic">等待 Coder 回应...</span>
+                          <span className="text-xs text-gray-400 italic">
+                            {isLastRound ? '已进入仲裁阶段' : '等待 Coder 回应...'}
+                          </span>
                         </div>
                       )}
                     </div>
