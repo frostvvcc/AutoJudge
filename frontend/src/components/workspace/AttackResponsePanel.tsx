@@ -31,13 +31,19 @@ export default function AttackResponsePanel({
 
   const rounds = Object.keys(groupedByRound).map(Number).sort((a, b) => a - b);
 
-  const filteredRounds = filterRoundsByPhase(rounds, groupedByRound, selectedPhase);
+  const PHASE_MAP: Record<string, string> = {
+    plan: 'plan', coding: 'coding', debate: 'debate',
+    arbitration: 'arbitration', fixing: 'fixing',
+    judging: 'judging', user_decision: 'user_decision',
+  };
+  const phaseView = selectedPhase && PHASE_MAP[selectedPhase] ? PHASE_MAP[selectedPhase] : 'all';
+  const filteredRounds = rounds;
   const [expandedRound, setExpandedRound] = useState<number | null>(null);
 
   return (
     <div className="space-y-4">
       {/* Plan selection UI */}
-      {interruptData?.type === 'plan_review' && selectedPhase === 'plan' && (
+      {interruptData?.type === 'plan_review' && (phaseView === 'plan' || phaseView === 'all') && (
         <PlanInteractionCard
           interruptData={interruptData}
           onRespond={onRespondInterrupt}
@@ -45,14 +51,130 @@ export default function AttackResponsePanel({
       )}
 
       {/* Resolution decision UI */}
-      {interruptData?.type === 'resolution_decision' && selectedPhase === 'user_decision' && (
+      {interruptData?.type === 'resolution_decision' && (phaseView === 'user_decision' || phaseView === 'all') && (
         <ResolutionDecisionCard
           interruptData={interruptData}
           onRespond={onRespondInterrupt}
         />
       )}
 
-      {filteredRounds.map((round) => {
+      {/* Phase-specific rendering */}
+      {phaseView === 'plan' && (
+        groupedByRound[0]?.filter((m) => m.content.startsWith('[方案设计]')).map((msg, i) => (
+          <div key={`plan-${i}`} className="bg-white rounded-xl border border-gray-200 p-4">
+            <PlanDisplayCard content={msg.content} />
+          </div>
+        ))
+      )}
+
+      {phaseView === 'coding' && (() => {
+        const r1Coder = (groupedByRound[1] ?? []).filter((m) =>
+          m.agent === 'coder' && !m.content.startsWith('[方案设计]') &&
+          !(m.structured as Record<string, unknown>)?.responses
+        );
+        return r1Coder.length > 0 ? (
+          <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-4">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-lg">⌨️</span>
+              <span className="text-sm font-bold text-blue-700">Coder 初版代码</span>
+            </div>
+            {r1Coder.map((msg, i) => (
+              <CoderCodeCard key={`coding-${i}`} message={msg} round={1} />
+            ))}
+          </div>
+        ) : (
+          <div className="text-center py-12 text-gray-400 text-sm">编码阶段暂无记录</div>
+        );
+      })()}
+
+      {phaseView === 'debate' && (() => {
+        const debateRounds = rounds.filter((r) => r > 0 && (groupedByRound[r] ?? []).some((m) =>
+          ['security', 'performance', 'correctness'].includes(m.agent)
+        ));
+        return debateRounds.length > 0 ? debateRounds.map((round) => {
+          const msgs = groupedByRound[round];
+          const attackerMsgs = msgs.filter((m) =>
+            ['security', 'performance', 'correctness'].includes(m.agent) &&
+            !m.content.startsWith('[交叉审阅]'),
+          );
+          const crossMsgs = msgs.filter((m) => m.content.startsWith('[交叉审阅]'));
+          const coderRespMsgs = msgs.filter((m) =>
+            m.agent === 'coder' && !m.content.startsWith('[方案设计]') &&
+            !!(m.structured as Record<string, unknown>)?.responses
+          );
+          const isCollapsible = debateRounds.length > 1;
+          const isExpanded = expandedRound === round || !isCollapsible || round === debateRounds[debateRounds.length - 1];
+
+          return (
+            <div key={round} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <button
+                onClick={() => isCollapsible && setExpandedRound(isExpanded ? null : round)}
+                className={`w-full flex items-center justify-between px-4 py-3 ${isCollapsible ? 'hover:bg-gray-50 cursor-pointer' : ''} transition-colors`}
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center text-sm font-bold">
+                    {round}
+                  </div>
+                  <span className="text-sm font-semibold text-gray-700">Round {round}</span>
+                  <RoundSummaryChips messages={msgs} />
+                </div>
+                {isCollapsible && (
+                  <svg className={`w-4 h-4 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+                    fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+                  </svg>
+                )}
+              </button>
+              {isExpanded && (
+                <div className="px-4 pb-4 space-y-4 border-t border-gray-100 pt-3">
+                  {coderRespMsgs.length > 0 && (
+                    <CoderResponsesSection coderMsgs={coderRespMsgs} allMessages={messages} currentRound={round} />
+                  )}
+                  {attackerMsgs.length > 0 && (
+                    <div className="space-y-3">
+                      <span className="text-xs font-semibold text-red-500">
+                        {round <= 1 ? '⚔️ Attacker 并行审查' : '⚔️ Attacker 复查修复'}
+                      </span>
+                      <ThreadedDebateView attackerMsgs={attackerMsgs} coderMsgs={[]} />
+                    </div>
+                  )}
+                  {crossMsgs.length > 0 && <CrossReviewCard messages={crossMsgs} />}
+                </div>
+              )}
+            </div>
+          );
+        }) : (
+          <div className="text-center py-12 text-gray-400 text-sm">辩论阶段暂无记录</div>
+        );
+      })()}
+
+      {phaseView === 'arbitration' && (() => {
+        const arbMsgs = messages.filter((m) => m.agent === 'arbitrator');
+        return arbMsgs.length > 0 ? arbMsgs.map((msg, i) => (
+          <ArbitratorCard key={`arb-${i}`} message={msg} />
+        )) : <div className="text-center py-12 text-gray-400 text-sm">仲裁阶段暂无记录</div>;
+      })()}
+
+      {phaseView === 'fixing' && (() => {
+        const fixMsgs = messages.filter((m) =>
+          m.agent === 'coder' && (m.content.startsWith('[仲裁后修复]') || m.content.startsWith('[补修]') || m.content.startsWith('[聚焦修复'))
+        );
+        return fixMsgs.length > 0 ? fixMsgs.map((msg, i) => (
+          <div key={`fix-${i}`} className="bg-white rounded-xl border border-gray-200 p-4">
+            <CoderCodeCard message={msg} round={msg.round ?? 0} />
+          </div>
+        )) : <div className="text-center py-12 text-gray-400 text-sm">修复阶段暂无记录</div>;
+      })()}
+
+      {(phaseView === 'judging' || phaseView === 'user_decision') && (() => {
+        const jMsgs = messages.filter((m) => m.agent === 'judge');
+        return jMsgs.length > 0 ? jMsgs.map((msg, i) => (
+          <JudgeCard key={`judge-${i}`} message={msg} />
+        )) : <div className="text-center py-12 text-gray-400 text-sm">评审阶段暂无记录</div>;
+      })()}
+
+      {/* Default: show all rounds grouped (no phase selected, or "done") */}
+      {phaseView === 'all' && filteredRounds.map((round) => {
         const msgs = groupedByRound[round];
         const coderMsgs = msgs.filter((m) => m.agent === 'coder');
         const attackerMsgs = msgs.filter((m) =>
@@ -68,30 +190,18 @@ export default function AttackResponsePanel({
         const isDebateRound = round > 0 && attackerMsgs.length > 0;
         const isCollapsible = filteredRounds.length > 1;
         const isExpanded = expandedRound === round || !isCollapsible || round === filteredRounds[filteredRounds.length - 1];
-
-        const roundLabel = isPlanRound
-          ? '方案设计'
-          : round === 0
-            ? '准备阶段'
-            : `Round ${round}`;
+        const roundLabel = isPlanRound ? '方案设计' : round === 0 ? '准备阶段' : `Round ${round}`;
 
         return (
           <div key={round} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            {/* Round header - clickable to expand/collapse */}
             <button
               onClick={() => isCollapsible && setExpandedRound(isExpanded ? null : round)}
-              className={`w-full flex items-center justify-between px-4 py-3 ${
-                isCollapsible ? 'hover:bg-gray-50 cursor-pointer' : ''
-              } transition-colors`}
+              className={`w-full flex items-center justify-between px-4 py-3 ${isCollapsible ? 'hover:bg-gray-50 cursor-pointer' : ''} transition-colors`}
             >
               <div className="flex items-center gap-3">
                 <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
-                  isPlanRound ? 'bg-blue-100 text-blue-600' :
-                  isDebateRound ? 'bg-purple-100 text-purple-600' :
-                  'bg-gray-100 text-gray-500'
-                }`}>
-                  {isPlanRound ? '💡' : round === 0 ? '▶' : round}
-                </div>
+                  isPlanRound ? 'bg-blue-100 text-blue-600' : isDebateRound ? 'bg-purple-100 text-purple-600' : 'bg-gray-100 text-gray-500'
+                }`}>{isPlanRound ? '💡' : round === 0 ? '▶' : round}</div>
                 <span className="text-sm font-semibold text-gray-700">{roundLabel}</span>
                 {isDebateRound && <RoundSummaryChips messages={msgs} />}
               </div>
@@ -102,74 +212,31 @@ export default function AttackResponsePanel({
                 </svg>
               )}
             </button>
-
             {isExpanded && (
               <div className="px-4 pb-4 space-y-4 border-t border-gray-100 pt-3">
-                {/* Plan cards */}
                 {coderMsgs.filter((m) => m.content.startsWith('[方案设计]')).map((msg, i) => (
                   <PlanDisplayCard key={`plan-${round}-${i}`} content={msg.content} />
                 ))}
-
-                {/* Coder initial code or fix (non-plan, non-response) */}
-                {coderMsgs.filter((m) =>
-                  !m.content.startsWith('[方案设计]') &&
-                  !(m.structured as Record<string, unknown>)?.responses
-                ).map((msg, i) => (
-                  <CoderCodeCard key={`coder-code-${round}-${i}`} message={msg} round={round} />
+                {coderMsgs.filter((m) => !m.content.startsWith('[方案设计]') && !(m.structured as Record<string, unknown>)?.responses).map((msg, i) => (
+                  <CoderCodeCard key={`cc-${round}-${i}`} message={msg} round={round} />
                 ))}
-
-                {/* Coder structured responses (accept/rebut) */}
-                {coderMsgs.filter((m) =>
-                  !m.content.startsWith('[方案设计]') &&
-                  !!(m.structured as Record<string, unknown>)?.responses
-                ).length > 0 && (
-                  <CoderResponsesSection
-                    coderMsgs={coderMsgs.filter((m) =>
-                      !m.content.startsWith('[方案设计]') &&
-                      !!(m.structured as Record<string, unknown>)?.responses
-                    )}
-                    allMessages={messages}
-                    currentRound={round}
-                  />
+                {coderMsgs.filter((m) => !m.content.startsWith('[方案设计]') && !!(m.structured as Record<string, unknown>)?.responses).length > 0 && (
+                  <CoderResponsesSection coderMsgs={coderMsgs.filter((m) => !m.content.startsWith('[方案设计]') && !!(m.structured as Record<string, unknown>)?.responses)} allMessages={messages} currentRound={round} />
                 )}
-
-                {/* Attacker findings + threaded Coder responses */}
                 {attackerMsgs.length > 0 && (
                   <div className="space-y-3">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs font-semibold text-red-500">
-                        {round <= 1 ? '⚔️ Attacker 并行审查' : '⚔️ Attacker 复查修复'}
-                      </span>
-                    </div>
-                    <ThreadedDebateView
-                      attackerMsgs={attackerMsgs}
-                      coderMsgs={[]}
-                    />
+                    <span className="text-xs font-semibold text-red-500">{round <= 1 ? '⚔️ Attacker 并行审查' : '⚔️ Attacker 复查修复'}</span>
+                    <ThreadedDebateView attackerMsgs={attackerMsgs} coderMsgs={[]} />
                   </div>
                 )}
-
-                {/* Cross review */}
-                {crossMsgs.length > 0 && (
-                  <CrossReviewCard messages={crossMsgs} />
-                )}
-
-                {/* System messages */}
+                {crossMsgs.length > 0 && <CrossReviewCard messages={crossMsgs} />}
                 {systemMsgs.map((msg, i) => (
                   <div key={`sys-${round}-${i}`} className="flex items-start gap-2 px-3 py-2 bg-gray-50 rounded-lg text-xs text-gray-500">
-                    <span className="text-gray-400 shrink-0">ℹ️</span>
-                    {msg.content}
+                    <span className="text-gray-400 shrink-0">ℹ️</span>{msg.content}
                   </div>
                 ))}
-
-                {/* Arbitrator */}
-                {arbitratorMsgs.map((msg, i) => (
-                  <ArbitratorCard key={`arb-${round}-${i}`} message={msg} />
-                ))}
-
-                {/* Judge */}
-                {judgeMsgs.map((msg, i) => (
-                  <JudgeCard key={`judge-${round}-${i}`} message={msg} />
-                ))}
+                {arbitratorMsgs.map((msg, i) => <ArbitratorCard key={`arb-${round}-${i}`} message={msg} />)}
+                {judgeMsgs.map((msg, i) => <JudgeCard key={`judge-${round}-${i}`} message={msg} />)}
               </div>
             )}
           </div>
@@ -185,24 +252,6 @@ export default function AttackResponsePanel({
   );
 }
 
-
-function filterRoundsByPhase(
-  rounds: number[],
-  grouped: Record<number, DebateMessage[]>,
-  phase: string | null,
-): number[] {
-  if (!phase) return rounds;
-  return rounds.filter((r) => {
-    const msgs = grouped[r];
-    if (phase === 'plan') return r === 0 && msgs.some((m) => m.content.startsWith('[方案设计]'));
-    if (phase === 'coding') return r === 1 && msgs.some((m) => m.agent === 'coder' && !m.content.startsWith('[方案设计]'));
-    if (phase === 'debate') return r > 0 && msgs.some((m) => ['security', 'performance', 'correctness'].includes(m.agent));
-    if (phase === 'arbitration') return msgs.some((m) => m.agent === 'arbitrator');
-    if (phase === 'fixing') return msgs.some((m) => m.content.startsWith('[仲裁后修复]') || m.content.startsWith('[补修]') || m.content.startsWith('[聚焦修复'));
-    if (phase === 'judging' || phase === 'done') return msgs.some((m) => m.agent === 'judge');
-    return true;
-  });
-}
 
 
 function RoundSummaryChips({ messages }: { messages: DebateMessage[] }) {
