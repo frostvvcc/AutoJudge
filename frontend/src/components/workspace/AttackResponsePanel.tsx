@@ -6,6 +6,7 @@ import type { DebateMessage } from '../../types/debate';
 import { AGENT_LABELS, AGENT_DOTS } from '../../types/debate';
 import PlanDisplayCard from './PlanDisplayCard';
 import AnalysisCard from './AnalysisCard';
+import AnnotatedCodeReview from './AnnotatedCodeReview';
 import type { InterruptData, AnalysisData } from '../../contexts/DebateContext';
 
 interface Props {
@@ -163,19 +164,70 @@ export default function AttackResponsePanel({
                   </svg>
                 )}
               </button>
-              {isExpanded && (
-                <div className="px-4 pb-4 space-y-4 border-t border-gray-100 pt-3">
-                  {attackerMsgs.length > 0 && (
-                    <div className="space-y-3">
-                      <span className="text-xs font-semibold text-red-500">
-                        {isReviewOnly ? '🔍 Attacker 复查结果' : round <= 1 ? '⚔️ Attacker 并行审查' : '⚔️ Attacker 审查'}
-                      </span>
-                      <ThreadedDebateView attackerMsgs={attackerMsgs} nextRoundResponses={hasFindings ? coderResps : undefined} isLastRound={isLast && coderResps.length === 0} />
-                    </div>
-                  )}
-                  {crossMsgs.length > 0 && <CrossReviewCard messages={crossMsgs} />}
-                </div>
-              )}
+              {isExpanded && (() => {
+                const coderMsgsThisRound = (groupedByRound[round] ?? []).filter(m => m.agent === 'coder');
+                const coderMsgsPrevRound = (groupedByRound[round - 1] ?? []).filter(m => m.agent === 'coder');
+                const reviewCode = coderMsgsThisRound.find(m => m.code)?.code
+                  ?? coderMsgsPrevRound.find(m => m.code)?.code ?? '';
+
+                const allFindings: Array<{ agent: string; category: string; severity: string; description: string; test_input?: string; line_start?: number; line_end?: number }> = [];
+                for (const m of attackerMsgs) {
+                  const s = m.structured as Record<string, unknown> | undefined;
+                  const findings = (s?.findings as Array<Record<string, unknown>>) ?? [];
+                  for (const f of findings) {
+                    allFindings.push({
+                      agent: m.agent,
+                      category: (f.category as string) ?? '',
+                      severity: (f.severity as string) ?? 'medium',
+                      description: (f.description as string) ?? '',
+                      test_input: f.test_input as string | undefined,
+                      line_start: f.line_start as number | undefined,
+                      line_end: f.line_end as number | undefined,
+                    });
+                  }
+                }
+
+                const prevCode = round > 1
+                  ? (groupedByRound[round - 1] ?? []).find(m => m.agent === 'coder' && m.code)?.code ?? ''
+                  : '';
+                const fixedLines = new Set<number>();
+                if (prevCode && reviewCode && prevCode !== reviewCode) {
+                  const prevLines = prevCode.split('\n');
+                  const currLines = reviewCode.split('\n');
+                  for (let i = 0; i < currLines.length; i++) {
+                    if (i >= prevLines.length || currLines[i] !== prevLines[i]) {
+                      fixedLines.add(i + 1);
+                    }
+                  }
+                }
+
+                return (
+                  <div className="border-t border-gray-100 pt-3">
+                    {reviewCode ? (
+                      <AnnotatedCodeReview
+                        code={reviewCode}
+                        language="python"
+                        findings={allFindings}
+                        coderResponses={hasFindings ? coderResps.map(r => ({
+                          finding_ref: (r as Record<string,string>).finding_ref ?? '',
+                          action: (r as Record<string,string>).action ?? '',
+                          explanation: (r as Record<string,string>).explanation ?? '',
+                          evidence: (r as Record<string,string>).evidence,
+                        })) : []}
+                        round={round}
+                        coderFixedLines={fixedLines.size > 0 ? fixedLines : undefined}
+                      />
+                    ) : (
+                      <div className="px-4 pb-4 space-y-4">
+                        {attackerMsgs.length > 0 && (
+                          <ThreadedDebateView attackerMsgs={attackerMsgs} nextRoundResponses={hasFindings ? coderResps : undefined} isLastRound={isLast && coderResps.length === 0} />
+                        )}
+                      </div>
+                    )}
+                    {crossMsgs.length > 0 && <div className="px-4 pb-4"><CrossReviewCard messages={crossMsgs} /></div>}
+                  </div>
+                );
+              })()}
             </div>
           );
         });

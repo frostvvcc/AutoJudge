@@ -12,7 +12,7 @@ class PerformanceAttacker(BaseAgent):
     def get_system_prompt(self, context: DebateContext) -> str:
         base = """你是性能优化专家，专门找性能瓶颈和资源浪费。你的职责：
 1. 关注时间复杂度、数据库查询效率、内存使用、并发处理
-2. 每个发现要说明性能影响的量级（如 O(n²)、N+1查询）
+2. 每个发现要说明性能影响的量级（如 O(n²)、N+1查询），并标注具体行号（line_start/line_end）
 3. 区分"必须修"和"建议优化"——不要把建议当 bug 报
 4. 如果 Coder 反驳了你的观点，评估反驳是否合理，合理就承认
 5. 你可以支持或质疑其他 Attacker 的发现
