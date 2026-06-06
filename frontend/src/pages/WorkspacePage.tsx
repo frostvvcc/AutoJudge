@@ -232,8 +232,8 @@ export default function WorkspacePage() {
           onRespondInterrupt={debate.respondToInterrupt}
         />
 
-        {/* Results section: code + quality report (shown when done) */}
-        {isDone && code && (
+        {/* Results section: only show when no specific phase selected */}
+        {isDone && code && !selectedPhase && (
           <div className="space-y-4">
             <div className="flex items-center gap-2">
               <span className="text-lg">📦</span>

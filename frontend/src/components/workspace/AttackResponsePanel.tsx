@@ -91,17 +91,30 @@ export default function AttackResponsePanel({
         const debateRounds = rounds.filter((r) => r > 0 && (groupedByRound[r] ?? []).some((m) =>
           ['security', 'performance', 'correctness'].includes(m.agent)
         ));
-        return debateRounds.length > 0 ? debateRounds.map((round) => {
+        if (debateRounds.length === 0) {
+          return <div className="text-center py-12 text-gray-400 text-sm">辩论阶段暂无记录</div>;
+        }
+
+        const nextRoundResponses = (round: number): Array<Record<string, string>> => {
+          const nextMsgs = groupedByRound[round + 1] ?? [];
+          const resps: Array<Record<string, string>> = [];
+          for (const m of nextMsgs) {
+            if (m.agent !== 'coder') continue;
+            const s = m.structured as Record<string, unknown> | undefined;
+            const r = (s?.responses as Array<Record<string, string>>) ?? [];
+            resps.push(...r);
+          }
+          return resps;
+        };
+
+        return debateRounds.map((round) => {
           const msgs = groupedByRound[round];
           const attackerMsgs = msgs.filter((m) =>
             ['security', 'performance', 'correctness'].includes(m.agent) &&
             !m.content.startsWith('[交叉审阅]'),
           );
           const crossMsgs = msgs.filter((m) => m.content.startsWith('[交叉审阅]'));
-          const coderRespMsgs = msgs.filter((m) =>
-            m.agent === 'coder' && !m.content.startsWith('[方案设计]') &&
-            !!(m.structured as Record<string, unknown>)?.responses
-          );
+          const coderResps = nextRoundResponses(round);
           const isCollapsible = debateRounds.length > 1;
           const isExpanded = expandedRound === round || !isCollapsible || round === debateRounds[debateRounds.length - 1];
 
@@ -127,15 +140,12 @@ export default function AttackResponsePanel({
               </button>
               {isExpanded && (
                 <div className="px-4 pb-4 space-y-4 border-t border-gray-100 pt-3">
-                  {coderRespMsgs.length > 0 && (
-                    <CoderResponsesSection coderMsgs={coderRespMsgs} allMessages={messages} currentRound={round} />
-                  )}
                   {attackerMsgs.length > 0 && (
                     <div className="space-y-3">
                       <span className="text-xs font-semibold text-red-500">
                         {round <= 1 ? '⚔️ Attacker 并行审查' : '⚔️ Attacker 复查修复'}
                       </span>
-                      <ThreadedDebateView attackerMsgs={attackerMsgs} coderMsgs={[]} />
+                      <ThreadedDebateView attackerMsgs={attackerMsgs} coderMsgs={[]} nextRoundResponses={coderResps} />
                     </div>
                   )}
                   {crossMsgs.length > 0 && <CrossReviewCard messages={crossMsgs} />}
@@ -143,9 +153,7 @@ export default function AttackResponsePanel({
               )}
             </div>
           );
-        }) : (
-          <div className="text-center py-12 text-gray-400 text-sm">辩论阶段暂无记录</div>
-        );
+        });
       })()}
 
       {phaseView === 'arbitration' && (() => {
@@ -289,15 +297,19 @@ function RoundSummaryChips({ messages }: { messages: DebateMessage[] }) {
 function ThreadedDebateView({
   attackerMsgs,
   coderMsgs,
+  nextRoundResponses,
 }: {
   attackerMsgs: DebateMessage[];
   coderMsgs: DebateMessage[];
+  nextRoundResponses?: Array<Record<string, string>>;
 }) {
-  const allResponses: Array<Record<string, string>> = [];
-  for (const m of coderMsgs) {
-    const s = m.structured as Record<string, unknown> | undefined;
-    const resps = (s?.responses as Array<Record<string, string>>) ?? [];
-    allResponses.push(...resps);
+  const allResponses: Array<Record<string, string>> = nextRoundResponses ?? [];
+  if (!nextRoundResponses) {
+    for (const m of coderMsgs) {
+      const s = m.structured as Record<string, unknown> | undefined;
+      const resps = (s?.responses as Array<Record<string, string>>) ?? [];
+      allResponses.push(...resps);
+    }
   }
 
   const findingsByRef: Map<string, { finding: Record<string, string>; agent: string }> = new Map();

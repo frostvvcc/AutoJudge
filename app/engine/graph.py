@@ -513,7 +513,9 @@ def _check_and_return_consensus(
         for m in latest_per_agent.values()
     ]
 
-    result = consensus_detector.check_consensus(debate_msgs)
+    skip_list = set(state.get("skip_list", []))
+    active_attackers = {"security", "performance", "correctness"} - skip_list
+    result = consensus_detector.check_consensus(debate_msgs, active_attackers)
 
     update = {
         "consensus": result,
