@@ -609,8 +609,10 @@ function PlanInteractionCard({
   const [feedback, setFeedback] = useState('');
   const [mode, setMode] = useState<'select' | 'chat'>('select');
 
+  const planContent = typeof interruptData.content === 'string' ? interruptData.content : '';
+
   return (
-    <div className="rounded-xl border-2 border-blue-300 bg-blue-50 p-5 space-y-4 animate-in">
+    <div className="rounded-xl border-2 border-blue-300 bg-blue-50 p-5 space-y-4">
       <div className="flex items-center gap-2">
         <span className="text-xl">🎯</span>
         <h3 className="text-sm font-bold text-blue-700">请选择方案</h3>
@@ -618,6 +620,11 @@ function PlanInteractionCard({
           第 {(interruptData.round ?? 0) + 1}/{interruptData.max_rounds ?? 7} 轮
         </span>
       </div>
+
+      {/* Render the actual plan content */}
+      {planContent && (
+        <PlanDisplayCard content={`[方案设计] ${planContent}`} />
+      )}
 
       <div className="flex gap-3">
         <button
