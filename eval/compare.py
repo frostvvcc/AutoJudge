@@ -1,6 +1,9 @@
 """
-Compare evaluation results across baseline, single_review, and adversarial modes.
-Aggregates custom_runner and static_analysis results into a unified report.
+Unified evaluation comparison: aggregates LangSmith experiment results
+with static analysis and debate effectiveness metrics.
+
+Usage:
+    python -m eval.compare
 """
 
 from __future__ import annotations
@@ -9,61 +12,57 @@ import asyncio
 import json
 import logging
 
-from eval.custom_runner import run_evaluation
+from eval.debate_effectiveness_eval import run_debate_effectiveness_eval
 from eval.static_analysis import compare_static_analysis
 
 logger = logging.getLogger(__name__)
 
 
-async def run_full_comparison(task_ids: list[str] | None = None) -> dict:
-    """Run complete three-mode comparison and return unified report."""
-    custom_results = await run_evaluation(task_ids=task_ids)
-    return format_report(custom_results)
+async def run_full_comparison() -> dict:
+    """Run debate effectiveness evaluation and return unified report."""
+    debate_metrics = await run_debate_effectiveness_eval()
 
-
-def format_report(metrics: dict) -> dict:
-    report = {"comparison": {}}
-
-    for mode in ["baseline", "single_review", "adversarial"]:
-        m = metrics.get(mode, {})
-        if "error" in m:
-            report["comparison"][mode] = {"error": m["error"]}
-            continue
-
-        report["comparison"][mode] = {
-            "tasks_evaluated": m.get("task_count", 0),
-            "defect_detection_rate": f"{m.get('defect_detection_rate', 0) * 100:.1f}%",
-            "detected_out_of_known": f"{m.get('total_detected', 0)}/{m.get('total_known', 0)}",
-            "avg_tokens": m.get("avg_tokens", 0),
-            "avg_latency_ms": m.get("avg_latency_ms", 0),
-            "avg_rounds": m.get("avg_rounds", 1),
-            "estimated_cost_usd": m.get("total_cost_usd", 0),
-        }
-
-    baseline = metrics.get("baseline", {})
-    adversarial = metrics.get("adversarial", {})
-    b_rate = baseline.get("defect_detection_rate", 0)
-    a_rate = adversarial.get("defect_detection_rate", 0)
-
-    if b_rate > 0:
-        improvement = ((a_rate - b_rate) / b_rate) * 100
-    else:
-        improvement = 0
-
-    report["summary"] = {
-        "detection_rate_improvement": f"+{improvement:.1f}%",
-        "cost_multiplier": (
-            f"{adversarial.get('avg_tokens', 1) / max(baseline.get('avg_tokens', 1), 1):.1f}x"
-        ),
-        "latency_multiplier": (
-            f"{adversarial.get('avg_latency_ms', 1) / max(baseline.get('avg_latency_ms', 1), 1):.1f}x"
+    report = {
+        "debate_effectiveness": debate_metrics.get("metrics", {}),
+        "total_sessions_evaluated": debate_metrics.get("total_sessions", 0),
+        "note": (
+            "For ablation study and defect detection comparisons, "
+            "run: python -m eval.langsmith_experiments"
         ),
     }
 
     return report
 
 
+def format_report(report: dict) -> str:
+    """Format report for human-readable output."""
+    lines = ["=" * 60, "AutoJudge Evaluation Report", "=" * 60, ""]
+
+    metrics = report.get("debate_effectiveness", {})
+    if metrics:
+        lines.append("Debate Effectiveness Metrics:")
+        for key, val in metrics.items():
+            if isinstance(val, dict):
+                value = val.get("value", "N/A")
+                ideal = val.get("ideal_range", "")
+                desc = val.get("description", key)
+                lines.append(f"  {key}: {value}  (ideal: {ideal})  — {desc}")
+            else:
+                lines.append(f"  {key}: {val}")
+    else:
+        lines.append("  No completed debate sessions found.")
+
+    lines.append("")
+    lines.append(f"Total sessions evaluated: {report.get('total_sessions_evaluated', 0)}")
+    lines.append("")
+    lines.append(report.get("note", ""))
+
+    return "\n".join(lines)
+
+
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    report = asyncio.run(run_full_comparison())
-    print(json.dumps(report, indent=2, ensure_ascii=False))
+    result = asyncio.run(run_full_comparison())
+    print(format_report(result))
+    print("\nRaw JSON:")
+    print(json.dumps(result, indent=2, ensure_ascii=False))

@@ -4,6 +4,7 @@ from fastapi import Depends, HTTPException, Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth.blacklist import is_blacklisted
 from app.auth.jwt import decode_token
 from app.db.engine import get_session
 from app.db.models import User
@@ -21,6 +22,10 @@ async def get_current_user(
     payload = decode_token(token)
     if payload is None or payload.get("type") != "access":
         raise HTTPException(status_code=401, detail="令牌无效或已过期")
+
+    jti = payload.get("jti")
+    if jti and await is_blacklisted(jti):
+        raise HTTPException(status_code=401, detail="令牌已注销")
 
     user_id = int(payload["sub"])
     result = await session.execute(select(User).where(User.id == user_id))

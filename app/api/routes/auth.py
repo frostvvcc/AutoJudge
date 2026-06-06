@@ -4,11 +4,13 @@ import logging
 import re
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.middleware.rate_limit import limiter
+from app.auth.blacklist import blacklist_token, is_blacklisted
 from app.auth.deps import get_current_user
 from app.auth.jwt import create_access_token, create_refresh_token, decode_token
 from app.auth.password import hash_password, verify_password
@@ -120,7 +122,8 @@ async def register(body: RegisterRequest, db: AsyncSession = Depends(get_session
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(body: LoginRequest, db: AsyncSession = Depends(get_session)):
+@limiter.limit("10/minute")
+async def login(request: Request, body: LoginRequest, db: AsyncSession = Depends(get_session)):
     result = await db.execute(
         select(User).where(
             (User.username == body.login) | (User.email == body.login)
@@ -146,6 +149,10 @@ async def refresh_token(body: RefreshRequest, db: AsyncSession = Depends(get_ses
     if payload is None or payload.get("type") != "refresh":
         raise HTTPException(status_code=401, detail="刷新令牌无效或已过期")
 
+    jti = payload.get("jti")
+    if jti and await is_blacklisted(jti):
+        raise HTTPException(status_code=401, detail="刷新令牌已注销")
+
     user_id = int(payload["sub"])
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
@@ -153,7 +160,30 @@ async def refresh_token(body: RefreshRequest, db: AsyncSession = Depends(get_ses
     if user is None or not user.is_active:
         raise HTTPException(status_code=401, detail="用户不存在")
 
+    if jti and payload.get("exp"):
+        await blacklist_token(jti, payload["exp"])
+
     return _token_response(user)
+
+
+@router.post("/logout")
+async def logout(request: Request):
+    """Revoke the current access token by adding its jti to the blacklist."""
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="缺少认证令牌")
+
+    token = auth_header[7:]
+    payload = decode_token(token)
+    if payload is None:
+        raise HTTPException(status_code=401, detail="令牌无效或已过期")
+
+    jti = payload.get("jti")
+    exp = payload.get("exp")
+    if jti and exp:
+        await blacklist_token(jti, exp)
+
+    return {"message": "已成功注销"}
 
 
 @router.get("/me", response_model=UserInfo)

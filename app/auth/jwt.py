@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timedelta, timezone
 
 import jwt
@@ -15,6 +16,7 @@ def create_access_token(user_id: int, uid: str) -> str:
         "sub": str(user_id),
         "uid": uid,
         "type": "access",
+        "jti": uuid.uuid4().hex,
         "exp": expire,
     }
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
@@ -28,6 +30,7 @@ def create_refresh_token(user_id: int, uid: str) -> str:
         "sub": str(user_id),
         "uid": uid,
         "type": "refresh",
+        "jti": uuid.uuid4().hex,
         "exp": expire,
     }
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)

@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.models.request import GenerateRequest
 from app.api.models.response import DebateResult
+from app.api.middleware.rate_limit import limiter
 from app.auth.deps import get_current_user
 from app.auth.jwt import decode_token
 from app.db.engine import async_session
@@ -142,24 +143,26 @@ async def _save_session(
 
 
 @router.post("/generate", response_model=DebateResult)
+@limiter.limit("5/minute;30/hour;100/day")
 async def generate(
-    request: GenerateRequest,
+    request: Request,
+    body: GenerateRequest,
     user: User = Depends(get_current_user),
 ):
     config = DebateConfig(
-        max_rounds=request.config.max_rounds if request.config else 5,
+        max_rounds=body.config.max_rounds if body.config else 5,
         attackers=(
-            request.config.attackers
-            if request.config
+            body.config.attackers
+            if body.config
             else ["security", "performance", "correctness"]
         ),
         model=(
-            request.config.model
-            if request.config
+            body.config.model
+            if body.config
             else "claude-sonnet-4-20250514"
         ),
         max_tokens=(
-            request.config.max_tokens if request.config else 100_000
+            body.config.max_tokens if body.config else 100_000
         ),
     )
 
@@ -171,9 +174,9 @@ async def generate(
 
     async with resource_mgr.acquire_debate_slot():
         result = await degradation_mgr.execute_with_degradation(
-            requirement=request.task,
-            language=request.language,
-            framework=request.framework,
+            requirement=body.task,
+            language=body.language,
+            framework=body.framework,
             config=config,
             api_key=None,
             on_progress=collect_progress,
@@ -181,9 +184,9 @@ async def generate(
 
     await _save_session(
         user_id=user.id,
-        task=request.task,
-        language=request.language,
-        framework=request.framework,
+        task=body.task,
+        language=body.language,
+        framework=body.framework,
         config=config,
         result=result,
         messages=collected_messages,
@@ -193,25 +196,27 @@ async def generate(
 
 
 @router.post("/generate/async")
+@limiter.limit("5/minute;30/hour;100/day")
 async def generate_async(
-    request: GenerateRequest,
+    request: Request,
+    body: GenerateRequest,
     user: User = Depends(get_current_user),
 ):
     """Enqueue a debate task for async processing via arq worker."""
     config = DebateConfig(
-        max_rounds=request.config.max_rounds if request.config else 5,
+        max_rounds=body.config.max_rounds if body.config else 5,
         attackers=(
-            request.config.attackers
-            if request.config
+            body.config.attackers
+            if body.config
             else ["security", "performance", "correctness"]
         ),
         model=(
-            request.config.model
-            if request.config
+            body.config.model
+            if body.config
             else "claude-sonnet-4-20250514"
         ),
         max_tokens=(
-            request.config.max_tokens if request.config else 100_000
+            body.config.max_tokens if body.config else 100_000
         ),
     )
 
@@ -221,9 +226,9 @@ async def generate_async(
         session = DebateSession(
             sid=task_id,
             user_id=user.id,
-            task=request.task,
-            language=request.language,
-            framework=request.framework,
+            task=body.task,
+            language=body.language,
+            framework=body.framework,
             config_json={
                 "max_rounds": config.max_rounds,
                 "attackers": config.attackers,
@@ -238,15 +243,15 @@ async def generate_async(
     try:
         from arq import create_pool as arq_create_pool
         from app.queue.worker import _parse_redis_url
-        from app.config import settings
+        from app.config import settings as _settings
 
-        redis_pool = await arq_create_pool(_parse_redis_url(settings.redis_url))
+        redis_pool = await arq_create_pool(_parse_redis_url(_settings.redis_url))
         await redis_pool.enqueue_job(
             "run_debate_task",
             task_id,
-            request.task,
-            request.language,
-            request.framework,
+            body.task,
+            body.language,
+            body.framework,
             {
                 "max_rounds": config.max_rounds,
                 "attackers": config.attackers,
@@ -258,7 +263,7 @@ async def generate_async(
         await redis_pool.close()
     except Exception as e:
         logger.warning("arq_enqueue_failed error=%s, falling back to sync", e)
-        return await generate(request, user)
+        return await generate(request, body, user)
 
     return {"task_id": task_id, "status": "queued"}
 
