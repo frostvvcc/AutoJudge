@@ -11,10 +11,10 @@ interface Props {
   elapsedMs: number;
   selectedPhase: string | null;
   onSelectPhase: (phase: string) => void;
-  isFlash?: boolean;
 }
 
-const PRO_PHASES: { key: DebatePhase; label: string; icon: string }[] = [
+const PHASES: { key: string; label: string; icon: string }[] = [
+  { key: 'analysis', label: '需求分析', icon: '🧠' },
   { key: 'plan', label: '方案设计', icon: '💡' },
   { key: 'coding', label: '编码', icon: '⌨️' },
   { key: 'debate', label: '辩论', icon: '⚔️' },
@@ -25,13 +25,8 @@ const PRO_PHASES: { key: DebatePhase; label: string; icon: string }[] = [
   { key: 'done', label: '完成', icon: '✅' },
 ];
 
-const FLASH_PHASES: { key: DebatePhase; label: string; icon: string }[] = [
-  { key: 'coding', label: '⚡ 快速生成', icon: '⚡' },
-  { key: 'done', label: '完成', icon: '✅' },
-];
-
-function phaseIndex(phase: DebatePhase, phases: typeof PRO_PHASES): number {
-  const idx = phases.findIndex((p) => p.key === phase);
+function phaseIndex(phase: string): number {
+  const idx = PHASES.findIndex((p) => p.key === phase);
   return idx >= 0 ? idx : 0;
 }
 
@@ -58,11 +53,9 @@ export default function PipelineProgress({
   elapsedMs,
   selectedPhase,
   onSelectPhase,
-  isFlash = false,
 }: Props) {
-  const PHASES = isFlash ? FLASH_PHASES : PRO_PHASES;
   const isError = phase === 'error';
-  const activeIdx = phase === 'idle' || isError ? -1 : phaseIndex(phase, PHASES);
+  const activeIdx = phase === 'idle' || isError ? -1 : phaseIndex(phase);
 
   const [dots, setDots] = useState('');
   useEffect(() => {
@@ -81,7 +74,7 @@ export default function PipelineProgress({
           const isCompleted = !isError && i < activeIdx;
           const isCurrent = !isError && i === activeIdx;
           const isSelected = selectedPhase === p.key || (selectedPhase === null && isCurrent);
-          const isClickable = !isFlash && (isCompleted || isCurrent);
+          const isClickable = isCompleted || isCurrent;
 
           let label = p.label;
           if (p.key === 'debate' && currentRound > 0) {

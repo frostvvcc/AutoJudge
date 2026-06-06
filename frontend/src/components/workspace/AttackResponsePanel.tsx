@@ -5,7 +5,8 @@ import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import type { DebateMessage } from '../../types/debate';
 import { AGENT_LABELS, AGENT_DOTS } from '../../types/debate';
 import PlanDisplayCard from './PlanDisplayCard';
-import type { InterruptData } from '../../contexts/DebateContext';
+import AnalysisCard from './AnalysisCard';
+import type { InterruptData, AnalysisData } from '../../contexts/DebateContext';
 
 interface Props {
   messages: DebateMessage[];
@@ -13,6 +14,7 @@ interface Props {
   selectedPhase: string | null;
   interruptData: InterruptData | null;
   onRespondInterrupt: (response: Record<string, unknown>) => void;
+  analysisData?: AnalysisData | null;
 }
 
 export default function AttackResponsePanel({
@@ -21,6 +23,7 @@ export default function AttackResponsePanel({
   selectedPhase,
   interruptData,
   onRespondInterrupt,
+  analysisData,
 }: Props) {
   const groupedByRound: Record<number, DebateMessage[]> = {};
   for (const msg of messages) {
@@ -32,6 +35,7 @@ export default function AttackResponsePanel({
   const rounds = Object.keys(groupedByRound).map(Number).sort((a, b) => a - b);
 
   const PHASE_MAP: Record<string, string> = {
+    analysis: 'analysis',
     plan: 'plan', coding: 'coding', debate: 'debate',
     arbitration: 'arbitration', fixing: 'fixing',
     judging: 'judging', user_decision: 'user_decision',
@@ -60,6 +64,10 @@ export default function AttackResponsePanel({
       )}
 
       {/* Phase-specific rendering */}
+      {phaseView === 'analysis' && analysisData && (
+        <AnalysisCard data={analysisData} />
+      )}
+
       {phaseView === 'plan' && (
         groupedByRound[0]?.filter((m) => m.content.startsWith('[方案设计]')).map((msg, i) => (
           <div key={`plan-${i}`} className="bg-white rounded-xl border border-gray-200 p-4">

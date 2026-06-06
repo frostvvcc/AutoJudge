@@ -1217,6 +1217,7 @@ async def run_debate_with_graph(
             preference_prompt = user_prefs.build_preference_prompt(prefs)
 
     # --- Notify frontend: analysis complete ---
+    await _notify({"type": "phase_change", "phase": "analysis"})
     await _notify({
         "type": "analysis_complete",
         "parsed_requirement": parsed_req,

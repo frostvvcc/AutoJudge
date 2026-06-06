@@ -3,7 +3,6 @@ import { useNavigate, useParams } from 'react-router-dom';
 import NavBar from '../components/NavBar';
 import { useDebate } from '../contexts/DebateContext';
 import PipelineProgress from '../components/workspace/PipelineProgress';
-import AnalysisCard from '../components/workspace/AnalysisCard';
 import DegradationBanner from '../components/workspace/DegradationBanner';
 import ProcessTransparencyPanel from '../components/workspace/ProcessTransparencyPanel';
 import AttackResponsePanel from '../components/workspace/AttackResponsePanel';
@@ -221,11 +220,6 @@ export default function WorkspacePage() {
           </div>
         )}
 
-        {/* Smart analysis card */}
-        {!isReplay && debate.analysisData && (
-          <AnalysisCard data={debate.analysisData} />
-        )}
-
         {/* Degradation banner */}
         {!isReplay && debate.degradation && (
           <DegradationBanner data={debate.degradation} />
@@ -243,6 +237,7 @@ export default function WorkspacePage() {
           selectedPhase={selectedPhase ?? (phase === 'idle' || phase === 'error' ? null : phase === 'done' ? 'done' : phase)}
           interruptData={isReplay ? null : debate.interruptData}
           onRespondInterrupt={debate.respondToInterrupt}
+          analysisData={!isReplay ? debate.analysisData : null}
         />
 
         {/* Results section: show in done view */}

@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom';
 import type { AnalysisData } from '../../contexts/DebateContext';
 
 interface Props {
@@ -116,13 +117,13 @@ export default function AnalysisCard({ data }: Props) {
                       <span className="text-xs text-indigo-500 font-mono">{exp.similarity}%</span>
                     )}
                     {exp.session_id && (
-                      <a
-                        href={`/workspace/${exp.session_id}`}
+                      <Link
+                        to={`/workspace/${exp.session_id}`}
                         onClick={(e) => e.stopPropagation()}
                         className="text-xs text-indigo-400 hover:text-indigo-600 underline"
                       >
                         查看来源
-                      </a>
+                      </Link>
                     )}
                   </div>
                 </div>
