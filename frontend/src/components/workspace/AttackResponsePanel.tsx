@@ -300,33 +300,92 @@ export default function AttackResponsePanel({
                 </svg>
               )}
             </button>
-            {isExpanded && (
-              <div className="px-4 pb-4 space-y-4 border-t border-gray-100 pt-3">
-                {coderMsgs.filter((m) => m.content.startsWith('[方案设计]')).map((msg, i) => (
-                  <PlanDisplayCard key={`plan-${round}-${i}`} content={msg.content} />
-                ))}
-                {coderMsgs.filter((m) => !m.content.startsWith('[方案设计]') && !(m.structured as Record<string, unknown>)?.responses).map((msg, i) => (
-                  <CoderCodeCard key={`cc-${round}-${i}`} message={msg} round={round} />
-                ))}
-                {coderMsgs.filter((m) => !m.content.startsWith('[方案设计]') && !!(m.structured as Record<string, unknown>)?.responses).length > 0 && (
-                  <CoderResponsesSection coderMsgs={coderMsgs.filter((m) => !m.content.startsWith('[方案设计]') && !!(m.structured as Record<string, unknown>)?.responses)} allMessages={messages} currentRound={round} />
-                )}
-                {attackerMsgs.length > 0 && (
-                  <div className="space-y-3">
-                    <span className="text-xs font-semibold text-red-500">{round <= 1 ? '⚔️ Attacker 并行审查' : '⚔️ Attacker 复查修复'}</span>
-                    <ThreadedDebateView attackerMsgs={attackerMsgs} coderMsgs={[]} />
-                  </div>
-                )}
-                {crossMsgs.length > 0 && <CrossReviewCard messages={crossMsgs} />}
-                {systemMsgs.map((msg, i) => (
-                  <div key={`sys-${round}-${i}`} className="flex items-start gap-2 px-3 py-2 bg-gray-50 rounded-lg text-xs text-gray-500">
-                    <span className="text-gray-400 shrink-0">ℹ️</span>{msg.content}
-                  </div>
-                ))}
-                {arbitratorMsgs.map((msg, i) => <ArbitratorCard key={`arb-${round}-${i}`} message={msg} />)}
-                {judgeMsgs.map((msg, i) => <JudgeCard key={`judge-${round}-${i}`} message={msg} />)}
-              </div>
-            )}
+            {isExpanded && (() => {
+              const reviewCode = isDebateRound
+                ? (coderMsgs.find(m => m.code)?.code
+                  ?? (groupedByRound[round - 1] ?? []).find(m => m.agent === 'coder' && m.code)?.code
+                  ?? '')
+                : '';
+
+              const allFindings: Array<{ agent: string; category: string; severity: string; description: string; test_input?: string; line_start?: number; line_end?: number }> = [];
+              if (isDebateRound) {
+                for (const m of attackerMsgs) {
+                  const s = m.structured as Record<string, unknown> | undefined;
+                  for (const f of ((s?.findings as Array<Record<string, unknown>>) ?? [])) {
+                    allFindings.push({
+                      agent: m.agent,
+                      category: (f.category as string) ?? '',
+                      severity: (f.severity as string) ?? 'medium',
+                      description: (f.description as string) ?? '',
+                      test_input: f.test_input as string | undefined,
+                      line_start: f.line_start as number | undefined,
+                      line_end: f.line_end as number | undefined,
+                    });
+                  }
+                }
+              }
+
+              const nextCoderMsgs = (groupedByRound[round + 1] ?? []).filter(m => m.agent === 'coder');
+              const coderResps: Array<Record<string, string>> = [];
+              for (const m of nextCoderMsgs) {
+                const s = m.structured as Record<string, unknown> | undefined;
+                coderResps.push(...((s?.responses as Array<Record<string, string>>) ?? []));
+              }
+
+              const prevCode = round > 1
+                ? (groupedByRound[round - 1] ?? []).find(m => m.agent === 'coder' && m.code)?.code ?? ''
+                : '';
+              const fixedLines = new Set<number>();
+              if (prevCode && reviewCode && prevCode !== reviewCode) {
+                const prevLines = prevCode.split('\n');
+                const currLines = reviewCode.split('\n');
+                for (let i = 0; i < currLines.length; i++) {
+                  if (i >= prevLines.length || currLines[i] !== prevLines[i]) fixedLines.add(i + 1);
+                }
+              }
+
+              return (
+                <div className="px-4 pb-4 space-y-4 border-t border-gray-100 pt-3">
+                  {coderMsgs.filter((m) => m.content.startsWith('[方案设计]')).map((msg, i) => (
+                    <PlanDisplayCard key={`plan-${round}-${i}`} content={msg.content} />
+                  ))}
+                  {coderMsgs.filter((m) => !m.content.startsWith('[方案设计]') && !(m.structured as Record<string, unknown>)?.responses).map((msg, i) => (
+                    <CoderCodeCard key={`cc-${round}-${i}`} message={msg} round={round} />
+                  ))}
+                  {coderMsgs.filter((m) => !m.content.startsWith('[方案设计]') && !!(m.structured as Record<string, unknown>)?.responses).length > 0 && (
+                    <CoderResponsesSection coderMsgs={coderMsgs.filter((m) => !m.content.startsWith('[方案设计]') && !!(m.structured as Record<string, unknown>)?.responses)} allMessages={messages} currentRound={round} />
+                  )}
+                  {isDebateRound && reviewCode ? (
+                    <AnnotatedCodeReview
+                      code={reviewCode}
+                      language="python"
+                      findings={allFindings}
+                      coderResponses={allFindings.length > 0 ? coderResps.map(r => ({
+                        finding_ref: r.finding_ref ?? '',
+                        action: r.action ?? '',
+                        explanation: r.explanation ?? '',
+                        evidence: r.evidence,
+                      })) : []}
+                      round={round}
+                      coderFixedLines={fixedLines.size > 0 ? fixedLines : undefined}
+                    />
+                  ) : attackerMsgs.length > 0 ? (
+                    <div className="space-y-3">
+                      <span className="text-xs font-semibold text-red-500">{round <= 1 ? '⚔️ Attacker 并行审查' : '⚔️ Attacker 复查修复'}</span>
+                      <ThreadedDebateView attackerMsgs={attackerMsgs} coderMsgs={[]} />
+                    </div>
+                  ) : null}
+                  {crossMsgs.length > 0 && <CrossReviewCard messages={crossMsgs} />}
+                  {systemMsgs.map((msg, i) => (
+                    <div key={`sys-${round}-${i}`} className="flex items-start gap-2 px-3 py-2 bg-gray-50 rounded-lg text-xs text-gray-500">
+                      <span className="text-gray-400 shrink-0">ℹ️</span>{msg.content}
+                    </div>
+                  ))}
+                  {arbitratorMsgs.map((msg, i) => <ArbitratorCard key={`arb-${round}-${i}`} message={msg} />)}
+                  {judgeMsgs.map((msg, i) => <JudgeCard key={`judge-${round}-${i}`} message={msg} />)}
+                </div>
+              );
+            })()}
           </div>
         );
       })}

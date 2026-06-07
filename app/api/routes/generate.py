@@ -385,8 +385,10 @@ async def websocket_generate(websocket: WebSocket):
         except Exception:
             pass
 
+    session_timeout = _compute_session_timeout(config)
+
     try:
-        async with asyncio.timeout(None):
+        async with asyncio.timeout(session_timeout):
             listener_task = asyncio.create_task(listen_for_intervention())
 
             async def run_debate():

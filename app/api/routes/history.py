@@ -193,11 +193,13 @@ async def get_session_detail(
     result = await db.execute(
         select(DebateSession)
         .options(selectinload(DebateSession.messages))
-        .where(DebateSession.sid == sid, DebateSession.user_id == user.id)
+        .where(DebateSession.sid == sid)
     )
     session = result.scalar_one_or_none()
     if session is None:
         raise HTTPException(status_code=404, detail="记录不存在")
+    if session.user_id != user.id:
+        raise HTTPException(status_code=403, detail="无权访问此记录")
 
     return SessionDetail(
         sid=session.sid,
@@ -240,13 +242,13 @@ async def delete_session(
     db: AsyncSession = Depends(get_session),
 ):
     result = await db.execute(
-        select(DebateSession).where(
-            DebateSession.sid == sid, DebateSession.user_id == user.id
-        )
+        select(DebateSession).where(DebateSession.sid == sid)
     )
     session = result.scalar_one_or_none()
     if session is None:
         raise HTTPException(status_code=404, detail="记录不存在")
+    if session.user_id != user.id:
+        raise HTTPException(status_code=403, detail="无权删除此记录")
 
     await db.delete(session)
     await db.commit()

@@ -303,12 +303,15 @@ async def coder_node(state: DebateState) -> dict:
         if ctx.extra_context:
             prompt += f"\n\n补充需求：{ctx.extra_context}"
     else:
+        current = state.get("current_code", "")
         prompt = (
             "请回应上一轮各 Attacker 的意见。"
             "对每个攻击：如果合理，承认并修复；如果不合理，调用工具验证后给出反驳证据。"
-            "如果有修复，贴出完整的新版代码。"
+            "修复后必须通过 updated_code 提交完整的新版代码（不要只贴片段）。"
             "提交前请用 run_code_snippet 自测修复后的代码。"
         )
+        if current:
+            prompt += f"\n\n你当前的完整代码如下（在此基础上修改）：\n```\n{current}\n```"
 
     start = time.monotonic()
     set_stream_callback(_make_stream_cb("coder"))
@@ -344,11 +347,15 @@ async def _attacker_node(
     ctx, budget = _build_context(state)
 
     if state["round"] <= 1:
-        prompt = "审查 Coder 提交的代码，从你的专业角度找出问题。"
+        prompt = (
+            "审查 Coder 提交的代码，从你的专业角度找出问题。"
+            "每个 finding 必须标注 line_start 和 line_end（代码行号），不可省略。"
+        )
     else:
         prompt = (
             "审查 Coder 的最新修复。如果之前的问题已修复，确认。"
-            "如果有新问题，指出。如果没有新问题了，stance 设为 satisfied。"
+            "如果有新问题，指出并标注 line_start/line_end 行号。"
+            "如果没有新问题了，stance 设为 satisfied。"
         )
 
     try:
@@ -358,11 +365,22 @@ async def _attacker_node(
         set_stream_callback(None)
         record_agent_call(agent_name, response.tokens_used, time.monotonic() - start)
         await _notify({"type": "stream_end", "agent": agent_name})
+        structured = response.structured
+        if not structured or not isinstance(structured, dict):
+            content_lower = response.content.lower()
+            has_pass = any(kw in content_lower for kw in ["✅", "通过", "satisfied", "无问题", "没有新问题"])
+            structured = {
+                "stance": "satisfied" if has_pass else "attacking",
+                "message": response.content,
+                "findings": [],
+            }
+            logger.warning("attacker_%s_no_structured round=%d, inferred stance=%s",
+                           agent_name, state["round"], structured["stance"])
         new_msg = {
             "agent": agent_name,
             "content": response.content,
             "round": state["round"],
-            "structured": response.structured,
+            "structured": structured,
         }
         await _notify({"type": "message", **new_msg})
         return {
@@ -1412,11 +1430,14 @@ async def run_debate_with_graph(
     transcript_rounds: dict[int, list[dict]] = {}
     for msg in final_state.get("messages", []):
         r = msg.get("round", 0)
-        transcript_rounds.setdefault(r, []).append({
+        entry: dict = {
             "agent": msg["agent"],
             "content": msg["content"],
             "code": msg.get("code"),
-        })
+        }
+        if msg.get("structured"):
+            entry["structured"] = msg["structured"]
+        transcript_rounds.setdefault(r, []).append(entry)
     transcript = [
         {"round": r, "messages": msgs}
         for r, msgs in sorted(transcript_rounds.items())

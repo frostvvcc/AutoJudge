@@ -72,7 +72,7 @@ interface DebateState {
   elapsedMs: number;
   streamingAgent: string | null;
   streamingText: string;
-  submit: (task: string, language: string) => void;
+  submit: (task: string, language: string, mode?: string) => void;
   skipAttacker: (attacker: string) => void;
   stop: () => void;
   reset: () => void;
@@ -108,6 +108,7 @@ export function DebateProvider({ children }: { children: ReactNode }) {
   const [streamingText, setStreamingText] = useState('');
 
   const wsSendRef = useRef<(data: Record<string, unknown>) => void>(() => {});
+  const reconnectRef = useRef<{ task: string; language: string; mode: string; retries: number } | null>(null);
 
   useEffect(() => {
     wsSendRef.current = (data: Record<string, unknown>) => {
@@ -202,6 +203,7 @@ export function DebateProvider({ children }: { children: ReactNode }) {
         const resultData = event.data ?? null;
         setResult(resultData);
         setActiveAgents(new Set());
+        reconnectRef.current = null;
         const rounds = resultData?.metrics?.total_rounds ?? resultData?.debate?.total_rounds ?? 0;
         const hasCode = Boolean(resultData?.code);
         const degraded = resultData?.metadata?.degradation_level;
@@ -301,11 +303,13 @@ export function DebateProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const submit = useCallback(
-    (task: string, language: string) => {
+    (task: string, language: string, mode: string = 'pro') => {
       if (wsRef.current) {
         wsRef.current.close();
         wsRef.current = null;
       }
+
+      reconnectRef.current = { task, language, mode, retries: 0 };
 
       setStatus('connecting');
       setMessages([]);
@@ -336,7 +340,8 @@ export function DebateProvider({ children }: { children: ReactNode }) {
             language,
             token,
             config: {
-              max_rounds: 5,
+              mode,
+              max_rounds: mode === 'flash' ? 1 : 5,
               attackers: ['security', 'performance', 'correctness'],
             },
           }),
@@ -360,9 +365,20 @@ export function DebateProvider({ children }: { children: ReactNode }) {
 
       ws.onclose = (event) => {
         wsRef.current = null;
-        stopTimer();
         setStatus((prev) => {
           if (prev === 'running' || prev === 'connecting') {
+            const rc = reconnectRef.current;
+            if (event.code !== 1000 && rc && rc.retries < 3) {
+              rc.retries++;
+              setError(null);
+              setStatusText(`连接断开，正在重连 (${rc.retries}/3)...`);
+              setTimeout(() => {
+                submit(rc.task, rc.language, rc.mode);
+              }, 2000 * rc.retries);
+              return 'connecting';
+            }
+            stopTimer();
+            reconnectRef.current = null;
             setError(
               event.code === 1000
                 ? '连接已关闭'
@@ -370,6 +386,8 @@ export function DebateProvider({ children }: { children: ReactNode }) {
             );
             return 'error';
           }
+          stopTimer();
+          reconnectRef.current = null;
           return prev;
         });
       };
