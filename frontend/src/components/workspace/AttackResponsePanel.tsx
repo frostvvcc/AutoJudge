@@ -201,12 +201,24 @@ export default function AttackResponsePanel({
                   }
                 }
 
-                const satisfiedEntries: Array<{ agent: string; message: string }> = [];
+                // Build satisfied entries with anchor lines from previous round's findings
+                const prevRoundFindings: Array<{ agent: string; line_start?: number }> = [];
+                for (const pm of (groupedByRound[round - 1] ?? [])) {
+                  if (['security', 'performance', 'correctness'].includes(pm.agent)) {
+                    const ps = pm.structured as Record<string, unknown> | undefined;
+                    for (const pf of ((ps?.findings as Array<Record<string, unknown>>) ?? [])) {
+                      prevRoundFindings.push({ agent: pm.agent, line_start: pf.line_start as number | undefined });
+                    }
+                  }
+                }
+
+                const satisfiedEntries: Array<{ agent: string; message: string; anchorLine?: number }> = [];
                 for (const m of attackerMsgs) {
                   const st = m.structured as Record<string, unknown> | undefined;
                   if (st?.stance === 'satisfied') {
                     const msg = (st.message as string) ?? `${AGENT_LABELS[m.agent]} 审查通过`;
-                    satisfiedEntries.push({ agent: m.agent, message: msg });
+                    const prevFinding = prevRoundFindings.find(f => f.agent === m.agent);
+                    satisfiedEntries.push({ agent: m.agent, message: msg, anchorLine: prevFinding?.line_start });
                   }
                 }
                 const roundAllSatisfied = satisfiedEntries.length > 0 && allFindings.length === 0;

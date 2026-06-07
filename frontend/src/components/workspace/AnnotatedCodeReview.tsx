@@ -21,6 +21,7 @@ interface CoderResponse {
 interface SatisfiedEntry {
   agent: string;
   message: string;
+  anchorLine?: number;
 }
 
 interface Props {
@@ -245,8 +246,8 @@ export default function AnnotatedCodeReview({
                   <span className={`px-1 rounded-[3px] font-bold ${SEVERITY_STYLES[f.severity] ?? 'bg-gray-100 text-gray-600'}`} style={{ fontSize: '0.75em' }}>{f.severity?.toUpperCase()}</span>
                   <span className="text-[#374151] font-semibold truncate flex-1" style={{ fontSize: '0.92em' }}>{f.category}</span>
                   {resp && (
-                    <span className={`px-[5px] rounded-[3px] font-bold ${resp.action === 'accept_and_fix' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-800'}`} style={{ fontSize: '0.75em' }}>
-                      {resp.action === 'accept_and_fix' ? '✓ Coder' : '✗ Coder'}
+                    <span className={`px-[5px] rounded-[3px] font-bold ${resp.action === 'accept_and_fix' ? 'bg-green-100 text-green-700' : 'bg-[#fef3c7] text-[#92400e]'}`} style={{ fontSize: '0.75em' }}>
+                      {resp.action === 'accept_and_fix' ? '✓ 修复' : '✗ 反驳'}
                     </span>
                   )}
                   <span className={`text-[#aaa] transition-transform ${isOpen ? 'rotate-180' : ''}`} style={{ fontSize: '0.75em' }}>▼</span>
@@ -265,7 +266,7 @@ export default function AnnotatedCodeReview({
                         resp.action === 'accept_and_fix' ? 'bg-[#f0fdf4] border border-[#bbf7d0]' : 'bg-[#fffbeb] border border-[#fde68a]'
                       }`}>
                         <span className={`px-[5px] rounded-[3px] font-bold whitespace-nowrap ${
-                          resp.action === 'accept_and_fix' ? 'bg-green-100 text-green-700' : 'bg-yellow-100 text-yellow-800'
+                          resp.action === 'accept_and_fix' ? 'bg-green-100 text-green-700' : 'bg-[#fef3c7] text-[#92400e]'
                         }`} style={{ fontSize: '0.75em' }}>
                           {resp.action === 'accept_and_fix' ? '✓ Coder' : '✗ Coder'}
                         </span>
@@ -286,9 +287,7 @@ export default function AnnotatedCodeReview({
           {/* Satisfied entries (Round 2 style — green, no expand) */}
           {satisfiedEntries?.map((s, idx) => {
             const icon = AGENT_ICONS[s.agent] ?? '✔';
-            const anchorLine = isReviewRound && coderFixedLines?.size
-              ? Math.min(...Array.from(coderFixedLines)) + idx * 8
-              : 1 + idx * 6;
+            const anchorLine = s.anchorLine ?? (1 + idx * 6);
 
             return (
               <div
