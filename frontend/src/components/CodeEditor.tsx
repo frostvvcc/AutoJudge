@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
-import { oneLight } from 'react-syntax-highlighter/dist/esm/styles/prism';
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 
 interface Props {
   code: string;
@@ -32,38 +32,38 @@ export default function CodeEditor({ code, language }: Props) {
   const lineCount = code.split('\n').length;
 
   return (
-    <div className="rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm">
-      <div className="flex items-center justify-between px-3 py-1.5 bg-gray-50 border-b border-gray-200">
-        <div className="flex items-center gap-2">
-          <span className="text-[10px] text-gray-500 font-medium">最终代码</span>
-          <span className="text-[10px] text-gray-400">{language}</span>
-          <span className="text-[10px] text-gray-400">{lineCount} 行</span>
+    <div className="rounded-xl overflow-hidden shadow-sm">
+      <div className="flex items-center justify-between px-4 py-2 bg-[#282c34] border-b border-[#3e4451]">
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-medium text-gray-400">最终代码</span>
+          <span className="text-xs text-gray-500">{language}</span>
+          <span className="text-xs text-gray-500">{lineCount} 行</span>
         </div>
         <button
           onClick={handleCopy}
-          className={`px-2 py-0.5 border rounded text-[10px] flex items-center gap-1 ${
-            copied ? 'border-green-300 text-green-600' : 'border-gray-300 text-gray-500 hover:bg-gray-100'
+          className={`px-2.5 py-1 rounded text-xs transition-colors ${
+            copied
+              ? 'bg-green-600/20 text-green-400'
+              : 'bg-white/10 text-gray-400 hover:bg-white/15 hover:text-gray-300'
           }`}
         >
-          {copied ? '✓ 已复制' : '📋 复制代码'}
+          {copied ? '✓ 已复制' : '复制'}
         </button>
       </div>
-      <div className="bg-[#fafbfc] overflow-x-auto" style={{ maxHeight: '400px', overflowY: 'auto' }}>
-        <SyntaxHighlighter
-          language={language}
-          style={oneLight}
-          customStyle={{
-            margin: 0,
-            padding: '0.75rem',
-            fontSize: '0.75rem',
-            background: 'transparent',
-          }}
-          showLineNumbers
-          lineNumberStyle={{ color: '#9ca3af', fontSize: '0.65rem' }}
-        >
-          {code}
-        </SyntaxHighlighter>
-      </div>
+      <SyntaxHighlighter
+        language={language}
+        style={oneDark}
+        customStyle={{
+          margin: 0,
+          padding: '1rem',
+          fontSize: '0.8rem',
+          maxHeight: '450px',
+        }}
+        showLineNumbers
+        lineNumberStyle={{ color: '#4a5568', fontSize: '0.7rem', minWidth: '2.5em' }}
+      >
+        {code}
+      </SyntaxHighlighter>
     </div>
   );
 }
