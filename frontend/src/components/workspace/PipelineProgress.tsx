@@ -86,13 +86,14 @@ export default function PipelineProgress({
             label = `辩论 R${currentRound}`;
           }
 
-          let icon = '';
+          let icon: string | null = null;
+          let badge: string | null = null;
           let style = 'bg-gray-50 text-gray-400 cursor-default';
           if (isCompleted) {
             icon = '✓';
             style = 'bg-green-50 text-green-700 hover:bg-green-100 cursor-pointer';
           } else if (isSkipped) {
-            icon = '—';
+            badge = '跳过';
             style = 'bg-gray-50 text-gray-400 cursor-default';
           } else if (isCurrent) {
             icon = p.icon;
@@ -111,8 +112,9 @@ export default function PipelineProgress({
                   ${style}
                 `}
               >
-                <span className="text-sm">{icon}</span>
+                {icon && <span className="text-sm">{icon}</span>}
                 {label}
+                {badge && <span className="text-[9px] text-gray-400 ml-0.5">({badge})</span>}
                 {isCurrent && isRunning && (
                   <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-blue-500 animate-ping" />
                 )}
