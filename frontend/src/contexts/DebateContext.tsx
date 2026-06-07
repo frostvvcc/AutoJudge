@@ -109,6 +109,7 @@ export function DebateProvider({ children }: { children: ReactNode }) {
 
   const wsSendRef = useRef<(data: Record<string, unknown>) => void>(() => {});
   const reconnectRef = useRef<{ task: string; language: string; mode: string; retries: number } | null>(null);
+  const planConfirmedRef = useRef(false);
 
   useEffect(() => {
     wsSendRef.current = (data: Record<string, unknown>) => {
@@ -136,6 +137,9 @@ export function DebateProvider({ children }: { children: ReactNode }) {
   const handleEvent = useCallback((event: WSEvent) => {
     switch (event.type) {
       case 'status':
+        if (planConfirmedRef.current && (event.content ?? '').includes('方案')) {
+          break;
+        }
         setStatusText(event.content ?? '');
         break;
 
@@ -148,6 +152,9 @@ export function DebateProvider({ children }: { children: ReactNode }) {
         break;
 
       case 'agent_start':
+        if (planConfirmedRef.current && event.agent === 'coder') {
+          break;
+        }
         setStatusText(`${event.agent} 正在分析...`);
         setStreamingAgent(event.agent ?? null);
         setStreamingText('');
@@ -260,13 +267,28 @@ export function DebateProvider({ children }: { children: ReactNode }) {
         break;
       }
 
-      case 'phase_change':
-        setCurrentPhase(event.phase ?? 'idle');
+      case 'phase_change': {
+        const newPhase = event.phase ?? 'idle';
+        if (newPhase === 'coding') {
+          planConfirmedRef.current = false;
+        }
+        const PHASE_ORDER = ['idle', 'analysis', 'plan', 'coding', 'debate', 'arbitration', 'fixing', 'judging', 'user_decision', 'done'];
+        setCurrentPhase((prev) => {
+          const prevIdx = PHASE_ORDER.indexOf(prev);
+          const newIdx = PHASE_ORDER.indexOf(newPhase);
+          if (prevIdx >= 0 && newIdx >= 0 && newIdx < prevIdx) {
+            return prev;
+          }
+          return newPhase;
+        });
         setActiveAgents(new Set());
         break;
+      }
 
       case 'plan_proposal':
-        setCurrentPhase('plan');
+        if (!planConfirmedRef.current) {
+          setCurrentPhase('plan');
+        }
         break;
 
       case 'arbitration_complete':
@@ -417,6 +439,7 @@ export function DebateProvider({ children }: { children: ReactNode }) {
 
   const reset = useCallback(() => {
     stopTimer();
+    planConfirmedRef.current = false;
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
@@ -440,8 +463,14 @@ export function DebateProvider({ children }: { children: ReactNode }) {
 
   const respondToInterrupt = useCallback((response: Record<string, unknown>) => {
     wsSendRef.current({ type: 'interrupt_response', data: response });
+    const itype = interruptData?.type;
     setInterruptData(null);
-  }, []);
+    if (itype === 'plan_review' && (response.action === 'select' || response.action === 'auto_select')) {
+      planConfirmedRef.current = true;
+      setCurrentPhase('coding');
+      setStatusText('方案已确认，正在准备编码...');
+    }
+  }, [interruptData]);
 
   return (
     <DebateContext.Provider

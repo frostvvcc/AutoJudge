@@ -503,17 +503,12 @@ async def _call_anthropic_proxy(
     if cached_tools:
         cached_tools[-1] = {**cached_tools[-1], "cache_control": {"type": "ephemeral"}}
 
-    needs_forced_tool = tool_choice and tool_choice.get("type") in ("tool", "any")
-    is_thinking_model = "opus" in resolved_model
-
     body: dict = {
         "model": resolved_model,
         "max_tokens": max_tokens,
         "system": system_blocks,
         "messages": messages,
     }
-    if is_thinking_model and needs_forced_tool:
-        body["thinking"] = {"type": "disabled", "budget_tokens": 0}
     if cached_tools:
         body["tools"] = cached_tools
     if tool_choice:
@@ -551,14 +546,10 @@ async def _call_anthropic_proxy(
             if effective_choice:
                 body["tool_choice"] = effective_choice
 
-            use_streaming = is_thinking_model
-            if use_streaming:
-                data = await _stream_anthropic_sse(http, url, headers, body)
-            else:
-                resp = await http.post(url, headers=headers, json=body)
-                if resp.status_code != 200:
-                    raise RuntimeError(f"Proxy API error {resp.status_code}: {resp.text[:300]}")
-                data = resp.json()
+            resp = await http.post(url, headers=headers, json=body)
+            if resp.status_code != 200:
+                raise RuntimeError(f"Proxy API error {resp.status_code}: {resp.text[:300]}")
+            data = resp.json()
 
             usage = data.get("usage", {})
             total_tokens += usage.get("input_tokens", 0) + usage.get("output_tokens", 0)

@@ -109,6 +109,9 @@ class DebateState(TypedDict):
     must_fix_items: list[dict]
     convergence_reason: str
     selected_plan: str
+    plan_content: str
+    plan_round: int
+    plan_action: str
     config: dict
     enable_interrupt: bool
     retry_count: int
@@ -168,102 +171,91 @@ PLAN_PHASE_PROMPT = """根据以下需求，设计 2 个不同方向的实现方
 
 
 async def plan_node(state: DebateState) -> dict:
-    """Plan Phase: Coder outputs 2 solution proposals for user to choose."""
+    """Plan Phase: single interrupt per execution, state-driven iteration."""
     ctx, budget = _build_context(state)
-
-    await _notify({"type": "phase_change", "phase": "plan"})
-    await _notify({"type": "status", "content": "Coder 正在设计方案..."})
-    await _notify({"type": "agent_start", "agent": "coder"})
-
-    extra = state.get("extra_context", "")
-    prompt = PLAN_PHASE_PROMPT.format(
-        requirement=state["requirement"],
-        extra_context=f"补充信息：{extra}" if extra else "",
-    )
 
     from app.llm.model_router import get_model_for_agent
     from app.llm.client import call_agent
 
-    start = time.monotonic()
-    system = (
-        "你是方案设计师。根据用户需求设计 2 个不同方向的实现方案。"
-        "不写代码，只说方案。每个方案说明技术选型、核心流程、安全考虑、不包含什么。"
-    )
-    messages = [{"role": "user", "content": prompt}]
-    response = await call_agent(
-        agent="planner",
-        system_prompt=system,
-        messages=messages,
-        model=get_model_for_agent("planner"),
-        max_tokens=budget.get_max_tokens("coder"),
-    )
-    budget.record("coder", response.tokens_used)
-    record_agent_call("coder", response.tokens_used, time.monotonic() - start)
+    plans_content = state.get("plan_content", "")
+    plan_round = state.get("plan_round", 0)
+    plan_action = state.get("plan_action", "")
+    max_plan_rounds = 7
 
-    plans_content = response.content
+    if plan_action == "chat" and plans_content:
+        await _notify({"type": "phase_change", "phase": "plan"})
+        await _notify({"type": "status", "content": "正在根据反馈调整方案..."})
+        await _notify({"type": "agent_start", "agent": "coder"})
 
-    await _notify({
-        "type": "plan_proposal",
-        "content": plans_content,
-    })
+        user_message = state.get("extra_context", "")
+        adjust_prompt = (
+            f"用户对方案有调整意见：\n{user_message}\n\n"
+            f"请根据用户的反馈重新设计 2 个不同方向的实现方案。"
+            f"之前的方案：\n{plans_content}"
+        )
+
+        start = time.monotonic()
+        response = await coder_agent.speak(ctx, adjust_prompt, budget)
+        record_agent_call("coder", response.tokens_used, time.monotonic() - start)
+        plans_content = response.content
+    else:
+        await _notify({"type": "phase_change", "phase": "plan"})
+        await _notify({"type": "status", "content": "Coder 正在设计方案..."})
+        await _notify({"type": "agent_start", "agent": "coder"})
+
+        extra = state.get("extra_context", "")
+        prompt = PLAN_PHASE_PROMPT.format(
+            requirement=state["requirement"],
+            extra_context=f"补充信息：{extra}" if extra else "",
+        )
+
+        start = time.monotonic()
+        system = (
+            "你是方案设计师。根据用户需求设计 2 个不同方向的实现方案。"
+            "不写代码，只说方案。每个方案说明技术选型、核心流程、安全考虑、不包含什么。"
+        )
+        messages = [{"role": "user", "content": prompt}]
+        response = await call_agent(
+            agent="planner",
+            system_prompt=system,
+            messages=messages,
+            model=get_model_for_agent("planner"),
+            max_tokens=budget.get_max_tokens("coder"),
+        )
+        budget.record("coder", response.tokens_used)
+        record_agent_call("coder", response.tokens_used, time.monotonic() - start)
+        plans_content = response.content
+
+    await _notify({"type": "plan_proposal", "content": plans_content})
 
     selected_plan = plans_content
 
-    # HITL: pause for user to select/adjust plan (WebSocket mode only)
-    if state.get("enable_interrupt"):
-        conversation_round = 0
-        max_plan_rounds = 7
+    if state.get("enable_interrupt") and plan_round < max_plan_rounds:
+        hint = ""
+        if plan_round == 3:
+            hint = "\n\n💡 已调整 3 轮方案。建议先选一个开始——后续辩论阶段还可以继续优化。"
+        elif plan_round >= 5:
+            hint = "\n\n⚠️ 方案讨论已进行多轮。建议尽快选择一个方案开始。"
 
-        while conversation_round < max_plan_rounds:
-            hint = ""
-            if conversation_round == 3:
-                hint = "\n\n💡 已调整 3 轮方案。建议先选一个开始——后续辩论阶段还可以继续优化。"
-            elif conversation_round == 5:
-                hint = "\n\n⚠️ 方案讨论已进行 5 轮。建议尽快选择一个方案开始。"
+        user_input = interrupt({
+            "type": "plan_review",
+            "content": plans_content + hint,
+            "round": plan_round,
+            "max_rounds": max_plan_rounds,
+        })
 
-            user_input = interrupt({
-                "type": "plan_review",
-                "content": plans_content + hint,
-                "round": conversation_round,
-                "max_rounds": max_plan_rounds,
-            })
-
-            if not user_input or not isinstance(user_input, dict):
-                break
-
+        if user_input and isinstance(user_input, dict):
             action = user_input.get("action", "")
-
             if action == "select":
                 selected_plan = user_input.get("plan_content", plans_content)
-                break
-
-            elif action == "auto_select":
-                break
-
             elif action == "chat":
-                user_message = user_input.get("message", "")
-                conversation_round += 1
-
-                adjust_prompt = (
-                    f"用户对方案有调整意见：\n{user_message}\n\n"
-                    f"请根据用户的反馈重新设计 2 个方案。"
-                    f"之前的方案：\n{plans_content}"
-                )
-
-                await _notify({"type": "agent_start", "agent": "coder"})
-                start = time.monotonic()
-                response = await coder_agent.speak(ctx, adjust_prompt, budget)
-                record_agent_call("coder", response.tokens_used, time.monotonic() - start)
-
-                plans_content = response.content
-                selected_plan = plans_content
-
-                await _notify({
-                    "type": "plan_proposal",
-                    "content": plans_content,
-                })
-            else:
-                break
+                return {
+                    "plan_content": plans_content,
+                    "plan_round": plan_round + 1,
+                    "plan_action": "chat",
+                    "extra_context": user_input.get("message", ""),
+                    "budget_spent": budget.spent,
+                }
 
     plan_msg = {
         "agent": "coder",
@@ -274,6 +266,8 @@ async def plan_node(state: DebateState) -> dict:
 
     return {
         "selected_plan": selected_plan,
+        "plan_content": plans_content,
+        "plan_action": "done",
         "messages": [plan_msg],
         "budget_spent": budget.spent,
     }
@@ -1120,7 +1114,12 @@ def build_debate_graph():
 
     graph.set_entry_point("plan")
 
-    graph.add_edge("plan", "coder")
+    def _plan_edge(state: DebateState) -> str:
+        if state.get("plan_action") == "chat":
+            return "plan"
+        return "coder"
+
+    graph.add_conditional_edges("plan", _plan_edge, {"plan": "plan", "coder": "coder"})
 
     graph.add_edge("coder", "security")
     graph.add_edge("coder", "performance")
@@ -1278,6 +1277,9 @@ async def run_debate_with_graph(
         "must_fix_items": [],
         "convergence_reason": "",
         "selected_plan": "",
+        "plan_content": "",
+        "plan_round": 0,
+        "plan_action": "",
         "config": {
             "max_rounds": config.max_rounds,
             "attackers": config.attackers,
@@ -1322,6 +1324,7 @@ async def run_debate_with_graph(
         max_interrupts = 20
 
         for _interrupt_round in range(max_interrupts):
+            _progress_callback.set(on_progress)
             final_state = await compiled.ainvoke(invoke_input, graph_config)
             snapshot = await compiled.aget_state(graph_config)
             if not snapshot.next:
