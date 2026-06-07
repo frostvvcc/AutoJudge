@@ -136,11 +136,11 @@ export default function AttackResponsePanel({
           const isCollapsible = debateRounds.length > 1;
           const isExpanded = expandedRound === round || !isCollapsible || round === debateRounds[debateRounds.length - 1];
 
-          const roundLabel = isReviewOnly
-            ? `Round ${round} · 复查`
-            : round <= 1
-              ? `Round ${round} · 审查 + 回应`
-              : `Round ${round}`;
+          const roundLabel = round <= 1
+            ? `Round ${round} · 初版审查`
+            : isReviewOnly
+              ? `Round ${round} · 修复后复查`
+              : `Round ${round} · 审查 + 回应`;
 
           return (
             <div key={round} className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -150,7 +150,7 @@ export default function AttackResponsePanel({
               >
                 <div className="flex items-center gap-3">
                   <div className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
-                    isReviewOnly ? 'bg-green-100 text-green-600' : 'bg-purple-100 text-purple-600'
+                    round <= 1 ? 'bg-purple-100 text-purple-600' : 'bg-green-100 text-green-600'
                   }`}>
                     {round}
                   </div>

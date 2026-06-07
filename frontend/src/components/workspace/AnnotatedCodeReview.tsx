@@ -118,7 +118,7 @@ export default function AnnotatedCodeReview({ code, findings, coderResponses, co
 
         const dot = document.createElement('div');
         dot.className = `conn-element absolute w-1.5 h-1.5 rounded-full ${dotColor}`;
-        dot.style.cssText = `position:absolute;left:-1px;top:${bridgeY - 3}px;width:6px;height:6px;border-radius:50%;`;
+        dot.style.cssText = `position:absolute;left:0px;top:${bridgeY - 2}px;width:4px;height:4px;border-radius:50%;`;
         annCol.appendChild(dot);
 
         // Horizontal bridge
@@ -203,10 +203,10 @@ export default function AnnotatedCodeReview({ code, findings, coderResponses, co
         {/* Code column */}
         <div
           ref={codeColRef}
-          className="flex-[0_0_62%] border-r border-gray-200 bg-[#fafbfc] overflow-x-auto"
+          className="flex-[0_0_62%] border-r border-gray-200 bg-white overflow-x-auto"
           style={{ fontSize: `${fontSize}px` }}
         >
-          <pre className="m-0 py-1.5 font-mono text-gray-900">
+          <pre className="m-0 py-1.5 font-mono text-black">
             {codeLines.map((line, i) => {
               const ln = i + 1;
               const hlAgent = highlightMap.get(ln);
@@ -250,7 +250,7 @@ export default function AnnotatedCodeReview({ code, findings, coderResponses, co
               <div
                 key={idx}
                 data-ann-idx={idx}
-                className={`absolute left-2 right-2 rounded-lg border ${colors.border} bg-white shadow-sm cursor-pointer hover:shadow-md transition-shadow`}
+                className={`absolute left-2 right-2 rounded-lg border ${colors.border} ${colors.bg} shadow-sm cursor-pointer hover:shadow-md transition-shadow`}
               >
                 {/* Summary header — always visible */}
                 <div
@@ -273,7 +273,7 @@ export default function AnnotatedCodeReview({ code, findings, coderResponses, co
                         ? 'bg-green-100 text-green-700'
                         : 'bg-yellow-100 text-yellow-700'
                     }`}>
-                      {resp.action === 'accept_and_fix' ? '✓ 修复' : '✗ 反驳'}
+                      {resp.action === 'accept_and_fix' ? '✓ Coder' : '✗ Coder'}
                     </span>
                   )}
                   <span className={`text-gray-400 text-[0.72em] transition-transform ${isOpen ? 'rotate-180' : ''}`}>
