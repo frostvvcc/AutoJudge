@@ -144,6 +144,8 @@ export function DebateProvider({ children }: { children: ReactNode }) {
         setCurrentPhase('debate');
         setStatus('running');
         setActiveAgents(new Set());
+        setStreamingAgent(null);
+        setStreamingText('');
         break;
 
       case 'agent_start':

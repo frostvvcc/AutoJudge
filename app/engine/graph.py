@@ -284,7 +284,8 @@ async def coder_node(state: DebateState) -> dict:
     ctx, budget = _build_context(state)
     ctx.round = state["round"] + 1
 
-    await _notify({"type": "round_start", "round": ctx.round})
+    if ctx.round == 1:
+        await _notify({"type": "phase_change", "phase": "coding"})
     await _notify({"type": "agent_start", "agent": "coder"})
 
     if ctx.round == 1:
@@ -328,6 +329,7 @@ async def coder_node(state: DebateState) -> dict:
         "structured": response.structured,
     }
     await _notify({"type": "message", **new_msg})
+    await _notify({"type": "round_start", "round": ctx.round})
 
     return {
         "round": ctx.round,
