@@ -161,14 +161,14 @@ export default function AnnotatedCodeReview({ code, findings, coderResponses, co
 
   const hlBorderClass = (agent: string) => {
     switch (agent) {
-      case 'security': return 'border-l-[3px] border-l-red-400 bg-red-500/[0.08]';
-      case 'performance': return 'border-l-[3px] border-l-orange-400 bg-orange-500/[0.08]';
-      case 'correctness': return 'border-l-[3px] border-l-green-400 bg-green-500/[0.08]';
+      case 'security': return 'border-l-[3px] border-l-red-400 bg-red-100/60';
+      case 'performance': return 'border-l-[3px] border-l-orange-400 bg-orange-100/60';
+      case 'correctness': return 'border-l-[3px] border-l-green-400 bg-green-100/60';
       default: return '';
     }
   };
 
-  const fixedLineClass = 'border-l-[3px] border-l-blue-400 bg-blue-500/[0.06]';
+  const fixedLineClass = 'border-l-[3px] border-l-blue-400 bg-blue-100/60';
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white overflow-hidden shadow-sm">
@@ -206,7 +206,7 @@ export default function AnnotatedCodeReview({ code, findings, coderResponses, co
           className="flex-[0_0_62%] border-r border-gray-200 bg-[#fafbfc] overflow-x-auto"
           style={{ fontSize: `${fontSize}px` }}
         >
-          <pre className="m-0 py-1.5 font-mono">
+          <pre className="m-0 py-1.5 font-mono text-gray-900">
             {codeLines.map((line, i) => {
               const ln = i + 1;
               const hlAgent = highlightMap.get(ln);
