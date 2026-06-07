@@ -1,8 +1,8 @@
-from __future__ import annotations
-
 import logging
 import re
 from datetime import datetime, timezone
+
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, field_validator
@@ -56,7 +56,7 @@ class UserInfo(BaseModel):
     uid: str
     username: str
     email: str
-    avatar_url: str | None
+    avatar_url: Optional[str]
     created_at: datetime
     debate_count: int
 
@@ -69,8 +69,8 @@ class TokenResponse(BaseModel):
 
 
 class UpdateProfileRequest(BaseModel):
-    username: str | None = Field(default=None, min_length=2, max_length=50)
-    avatar_url: str | None = None
+    username: Optional[str] = Field(default=None, min_length=2, max_length=50)
+    avatar_url: Optional[str] = None
 
 
 class ChangePasswordRequest(BaseModel):

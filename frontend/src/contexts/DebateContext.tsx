@@ -141,7 +141,6 @@ export function DebateProvider({ children }: { children: ReactNode }) {
 
       case 'round_start':
         setCurrentRound(event.round ?? 0);
-        setCurrentPhase('debate');
         setStatus('running');
         setActiveAgents(new Set());
         setStreamingAgent(null);
@@ -152,6 +151,9 @@ export function DebateProvider({ children }: { children: ReactNode }) {
         setStatusText(`${event.agent} 正在分析...`);
         setStreamingAgent(event.agent ?? null);
         setStreamingText('');
+        if (['security', 'performance', 'correctness'].includes(event.agent ?? '')) {
+          setCurrentPhase('debate');
+        }
         setActiveAgents((prev) => {
           const next = new Set(prev);
           next.add(event.agent!);
