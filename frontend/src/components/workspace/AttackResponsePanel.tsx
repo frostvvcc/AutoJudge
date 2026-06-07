@@ -201,6 +201,16 @@ export default function AttackResponsePanel({
                   }
                 }
 
+                const satisfiedEntries: Array<{ agent: string; message: string }> = [];
+                for (const m of attackerMsgs) {
+                  const st = m.structured as Record<string, unknown> | undefined;
+                  if (st?.stance === 'satisfied') {
+                    const msg = (st.message as string) ?? `${AGENT_LABELS[m.agent]} 审查通过`;
+                    satisfiedEntries.push({ agent: m.agent, message: msg });
+                  }
+                }
+                const roundAllSatisfied = satisfiedEntries.length > 0 && allFindings.length === 0;
+
                 return (
                   <div className="border-t border-gray-100 pt-3">
                     {reviewCode ? (
@@ -216,6 +226,8 @@ export default function AttackResponsePanel({
                         })) : []}
                         round={round}
                         coderFixedLines={fixedLines.size > 0 ? fixedLines : undefined}
+                        satisfiedEntries={satisfiedEntries.length > 0 ? satisfiedEntries : undefined}
+                        allSatisfied={roundAllSatisfied}
                       />
                     ) : (
                       <div className="px-4 pb-4 space-y-4">
