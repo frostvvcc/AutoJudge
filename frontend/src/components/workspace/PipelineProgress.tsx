@@ -11,6 +11,7 @@ interface Props {
   elapsedMs: number;
   selectedPhase: string | null;
   onSelectPhase: (phase: string) => void;
+  visitedPhases: Set<string>;
 }
 
 const PHASES: { key: string; label: string; icon: string }[] = [
@@ -53,6 +54,7 @@ export default function PipelineProgress({
   elapsedMs,
   selectedPhase,
   onSelectPhase,
+  visitedPhases,
 }: Props) {
   const isError = phase === 'error';
   const activeIdx = phase === 'idle' || isError ? -1 : phaseIndex(phase);
@@ -71,14 +73,30 @@ export default function PipelineProgress({
       {/* Phase bar */}
       <div className="flex items-center px-4 py-3 gap-0.5 overflow-x-auto">
         {PHASES.map((p, i) => {
-          const isCompleted = !isError && i < activeIdx;
+          const isPast = !isError && i < activeIdx;
           const isCurrent = !isError && i === activeIdx;
+          const wasVisited = visitedPhases.has(p.key);
+          const isCompleted = isPast && wasVisited;
+          const isSkipped = isPast && !wasVisited;
           const isSelected = selectedPhase === p.key || (selectedPhase === null && isCurrent);
           const isClickable = isCompleted || isCurrent;
 
           let label = p.label;
           if (p.key === 'debate' && currentRound > 0) {
             label = `辩论 R${currentRound}`;
+          }
+
+          let icon = '';
+          let style = 'bg-gray-50 text-gray-400 cursor-default';
+          if (isCompleted) {
+            icon = '✓';
+            style = 'bg-green-50 text-green-700 hover:bg-green-100 cursor-pointer';
+          } else if (isSkipped) {
+            icon = '—';
+            style = 'bg-gray-50 text-gray-400 cursor-default';
+          } else if (isCurrent) {
+            icon = p.icon;
+            style = 'bg-blue-50 text-blue-700 cursor-pointer';
           }
 
           return (
@@ -90,15 +108,10 @@ export default function PipelineProgress({
                   relative flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium
                   transition-all duration-300 whitespace-nowrap
                   ${isSelected ? 'ring-2 ring-blue-400 ring-offset-1' : ''}
-                  ${isCompleted
-                    ? 'bg-green-50 text-green-700 hover:bg-green-100 cursor-pointer'
-                    : isCurrent
-                      ? 'bg-blue-50 text-blue-700 cursor-pointer'
-                      : 'bg-gray-50 text-gray-400 cursor-default'
-                  }
+                  ${style}
                 `}
               >
-                <span className="text-sm">{isCompleted ? '✓' : isCurrent ? p.icon : ''}</span>
+                <span className="text-sm">{icon}</span>
                 {label}
                 {isCurrent && isRunning && (
                   <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-blue-500 animate-ping" />
@@ -106,7 +119,7 @@ export default function PipelineProgress({
               </button>
               {i < PHASES.length - 1 && (
                 <div className={`w-5 h-0.5 mx-0.5 rounded transition-colors duration-500 ${
-                  isCompleted ? 'bg-green-300' : 'bg-gray-200'
+                  isCompleted ? 'bg-green-300' : isSkipped ? 'bg-gray-200' : 'bg-gray-200'
                 }`} />
               )}
             </div>

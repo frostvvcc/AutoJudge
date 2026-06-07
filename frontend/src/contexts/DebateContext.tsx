@@ -72,6 +72,7 @@ interface DebateState {
   elapsedMs: number;
   streamingAgent: string | null;
   streamingText: string;
+  visitedPhases: Set<string>;
   submit: (task: string, language: string, mode?: string) => void;
   skipAttacker: (attacker: string) => void;
   stop: () => void;
@@ -106,6 +107,7 @@ export function DebateProvider({ children }: { children: ReactNode }) {
   const [elapsedMs, setElapsedMs] = useState(0);
   const [streamingAgent, setStreamingAgent] = useState<string | null>(null);
   const [streamingText, setStreamingText] = useState('');
+  const [visitedPhases, setVisitedPhases] = useState<Set<string>>(new Set());
 
   const wsSendRef = useRef<(data: Record<string, unknown>) => void>(() => {});
   const reconnectRef = useRef<{ task: string; language: string; mode: string; retries: number } | null>(null);
@@ -160,6 +162,7 @@ export function DebateProvider({ children }: { children: ReactNode }) {
         setStreamingText('');
         if (['security', 'performance', 'correctness'].includes(event.agent ?? '')) {
           setCurrentPhase('debate');
+          setVisitedPhases((prev) => { const next = new Set(prev); next.add('debate'); return next; });
         }
         setActiveAgents((prev) => {
           const next = new Set(prev);
@@ -271,6 +274,13 @@ export function DebateProvider({ children }: { children: ReactNode }) {
         const newPhase = event.phase ?? 'idle';
         if (newPhase === 'coding') {
           planConfirmedRef.current = false;
+        }
+        if (newPhase !== 'idle') {
+          setVisitedPhases((prev) => {
+            const next = new Set(prev);
+            next.add(newPhase);
+            return next;
+          });
         }
         const PHASE_ORDER = ['idle', 'analysis', 'plan', 'coding', 'debate', 'arbitration', 'fixing', 'judging', 'user_decision', 'done'];
         setCurrentPhase((prev) => {
@@ -459,6 +469,7 @@ export function DebateProvider({ children }: { children: ReactNode }) {
     setElapsedMs(0);
     setStreamingAgent(null);
     setStreamingText('');
+    setVisitedPhases(new Set());
   }, [stopTimer]);
 
   const respondToInterrupt = useCallback((response: Record<string, unknown>) => {
@@ -490,6 +501,7 @@ export function DebateProvider({ children }: { children: ReactNode }) {
         elapsedMs,
         streamingAgent,
         streamingText,
+        visitedPhases,
         submit,
         skipAttacker,
         stop,

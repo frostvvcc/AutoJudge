@@ -209,6 +209,7 @@ export default function WorkspacePage() {
           elapsedMs={isReplay ? 0 : debate.elapsedMs}
           selectedPhase={selectedPhase}
           onSelectPhase={setSelectedPhase}
+          visitedPhases={isReplay ? new Set(['analysis', 'plan', 'coding', 'debate', 'arbitration', 'fixing', 'judging', 'user_decision', 'done']) : debate.visitedPhases}
         />
 
         {/* Stop button */}
@@ -246,12 +247,12 @@ export default function WorkspacePage() {
             <div className="flex items-center gap-2">
               <span className="text-lg">📦</span>
               <h2 className="text-base font-bold text-gray-800">最终交付</h2>
-              {metrics && (
+              {metrics && (metrics.total_rounds > 0 || metrics.total_tokens > 0) && (
                 <div className="flex items-center gap-3 ml-auto text-xs text-gray-400">
-                  <span>{metrics.total_rounds} 轮</span>
-                  <span>{((metrics.total_tokens ?? 0) / 1000).toFixed(1)}k tokens</span>
-                  <span>{((metrics.total_latency_ms ?? 0) / 1000).toFixed(1)}s</span>
-                  <span>${(metrics.cost_usd ?? 0).toFixed(2)}</span>
+                  {metrics.total_rounds > 0 && <span>{metrics.total_rounds} 轮</span>}
+                  {metrics.total_tokens > 0 && <span>{(metrics.total_tokens / 1000).toFixed(1)}k tokens</span>}
+                  {metrics.total_latency_ms > 0 && <span>{(metrics.total_latency_ms / 1000).toFixed(1)}s</span>}
+                  {metrics.cost_usd > 0 && <span>${metrics.cost_usd.toFixed(2)}</span>}
                 </div>
               )}
             </div>
