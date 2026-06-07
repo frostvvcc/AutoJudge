@@ -209,7 +209,17 @@ export default function WorkspacePage() {
           elapsedMs={isReplay ? 0 : debate.elapsedMs}
           selectedPhase={selectedPhase}
           onSelectPhase={setSelectedPhase}
-          visitedPhases={isReplay ? new Set(['analysis', 'plan', 'coding', 'debate', 'arbitration', 'fixing', 'judging', 'user_decision', 'done']) : debate.visitedPhases}
+          visitedPhases={isReplay ? (() => {
+            const visited = new Set<string>(['analysis', 'plan']);
+            const agents = new Set(messages.map(m => m.agent));
+            if (agents.has('coder')) visited.add('coding');
+            if (agents.has('security') || agents.has('performance') || agents.has('correctness')) visited.add('debate');
+            if (agents.has('arbitrator')) visited.add('arbitration');
+            if (messages.some(m => m.content.startsWith('[修复') || m.content.startsWith('[补修]') || m.content.startsWith('[聚焦修复'))) visited.add('fixing');
+            if (agents.has('judge')) visited.add('judging');
+            if (isDone) visited.add('done');
+            return visited;
+          })() : debate.visitedPhases}
         />
 
         {/* Stop button */}
