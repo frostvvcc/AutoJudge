@@ -245,7 +245,7 @@ export default function WorkspacePage() {
         <AttackResponsePanel
           messages={messages}
           currentRound={currentRound}
-          selectedPhase={selectedPhase ?? (phase === 'idle' || phase === 'error' ? null : phase === 'done' ? 'done' : phase)}
+          selectedPhase={selectedPhase ?? (isReplay ? null : (phase === 'idle' || phase === 'error' ? null : phase === 'done' ? 'done' : phase))}
           interruptData={isReplay ? null : debate.interruptData}
           onRespondInterrupt={debate.respondToInterrupt}
           analysisData={!isReplay ? debate.analysisData : null}
