@@ -540,6 +540,7 @@ async def _call_anthropic_proxy(
     }
     if cached_tools:
         body["tools"] = cached_tools
+        body["thinking"] = {"type": "disabled"}
     if tool_choice:
         body["tool_choice"] = tool_choice
 
