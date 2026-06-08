@@ -128,7 +128,10 @@ class DebateContext:
         return messages
 
     def _build_coder_view(self) -> list[dict]:
-        """Coder 只看：最新一轮攻击者的发言 + 自己之前的回应。"""
+        """Coder 只看：最新一轮攻击者的发言 + 自己之前的回应。
+        Round 1（初版编码）时不包含方案设计消息——方案通过 prompt 注入，
+        避免 assistant 消息导致上下文混乱。
+        """
         messages = []
         recent_cutoff = max(0, self.round - 2)
 
@@ -145,6 +148,9 @@ class DebateContext:
 
         for msg in self.messages:
             if msg.round < recent_cutoff:
+                continue
+            # Skip plan messages (round 0) — plan content is injected via prompt
+            if msg.round == 0:
                 continue
             if msg.agent == "coder":
                 messages.append({"role": "assistant", "content": msg.content})
@@ -165,7 +171,7 @@ class DebateContext:
                 )
 
         if not messages or messages[-1]["role"] == "assistant":
-            messages.append({"role": "user", "content": "请回应攻击者的意见。"})
+            messages.append({"role": "user", "content": "请继续。"})
 
         return messages
 
