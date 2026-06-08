@@ -1155,13 +1155,38 @@ async def judge_node(state: DebateState) -> dict:
     await _notify({"type": "phase_change", "phase": "judging"})
     await _notify({"type": "agent_start", "agent": "judge"})
 
+    start = time.monotonic()
     set_stream_callback(_make_stream_cb("judge"))
     report = await judge_agent.summarize(ctx, budget)
     set_stream_callback(None)
+    record_agent_call("judge", budget.by_agent.get("judge", 0), time.monotonic() - start)
     await _notify({"type": "stream_end", "agent": "judge"})
     await _notify_budget(budget, "judge", "judge")
+
+    if not report or not report.get("star_rating"):
+        logger.warning("judge_report_empty_or_no_rating, using fallback")
+        report = report or {}
+        report.setdefault("star_rating", 3)
+        report.setdefault("star_comment", "代码质量中等（Judge 评分未返回，使用默认值）")
+        report.setdefault("score_security", 50)
+        report.setdefault("score_performance", 50)
+        report.setdefault("score_correctness", 50)
+        report.setdefault("usage_advice", "建议人工审查代码质量。")
+        report.setdefault("resolved_issues", [])
+        report.setdefault("unresolved_issues", [])
+        report.setdefault("confidence", 0.5)
+
+    new_msg = {
+        "agent": "judge",
+        "content": report.get("summary", "代码质量评审完成。"),
+        "round": state.get("round", 0),
+        "structured": report,
+    }
+    await _notify({"type": "message", **new_msg})
+
     return {
         "judge_report": report,
+        "messages": [new_msg],
         "budget_spent": budget.spent,
                 "budget_by_agent": dict(budget.by_agent),
                 "budget_by_phase": dict(budget.by_phase),
