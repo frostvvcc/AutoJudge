@@ -1481,17 +1481,12 @@ async def run_debate_with_graph(
 
     await _notify({"type": "status", "content": "正在理解需求..."})
 
-    # --- Pre-processing: requirement parsing + complexity routing ---
+    # --- Pre-processing: requirement parsing ---
     parsed_req = await parse_requirement(requirement, language, framework)
 
-    complexity = route_complexity(requirement, parsed_req)
-    complexity_config = get_debate_config(complexity)
-    if config.max_rounds == DebateConfig().max_rounds:
-        config.max_rounds = complexity_config["max_rounds"]
-    if config.attackers == DebateConfig().attackers:
-        config.attackers = complexity_config["attackers"]
-    if complexity_config.get("skip_cross_review"):
-        config.skip_cross_review = True
+    complexity = route_complexity(requirement, parsed_req or {})
+    # ComplexityRouter 仅用于前端展示复杂度标签，不覆盖 config。
+    # 所有任务统一使用调用方传入的 config（默认：三路 Attacker、5 轮、不跳过交叉审阅）。
 
     # --- Memory retrieval ---
     from app.db.redis import get_redis
