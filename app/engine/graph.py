@@ -1645,9 +1645,10 @@ async def run_debate_with_graph(
                 user_response = None
             invoke_input = Command(resume=user_response)
 
-        if final_state is None:
-            snapshot = await compiled.aget_state(graph_config)
-            final_state = snapshot.values if hasattr(snapshot, "values") else {}
+        # Always use aget_state for the complete merged state, not ainvoke's return value.
+        # ainvoke may return partial state in interrupt-based execution.
+        snapshot = await compiled.aget_state(graph_config)
+        final_state = snapshot.values if hasattr(snapshot, "values") else (final_state or {})
 
     # --- Post-processing: TestRunner ---
     final_code = final_state.get("current_code", "")
@@ -1752,6 +1753,10 @@ async def run_debate_with_graph(
 
     # --- Build DebateResult ---
     judge_report = final_state.get("judge_report", {})
+    logger.info("final_state_keys=%s judge_report_keys=%s judge_report_star=%s",
+                list(final_state.keys()) if isinstance(final_state, dict) else type(final_state).__name__,
+                list(judge_report.keys()) if isinstance(judge_report, dict) else type(judge_report).__name__,
+                judge_report.get("star_rating") if isinstance(judge_report, dict) else "N/A")
     budget_spent = final_state.get("budget_spent", 0)
     sonnet_rate = (3.0 + 15.0) / 2 / 1_000_000
     cost_usd = round(budget_spent * sonnet_rate, 4)
