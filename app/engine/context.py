@@ -149,8 +149,19 @@ class DebateContext:
             if msg.agent == "coder":
                 messages.append({"role": "assistant", "content": msg.content})
             elif msg.agent in ("security", "performance", "correctness"):
+                content_parts = [f"[{msg.agent.upper()}] {msg.content}"]
+                if msg.structured and isinstance(msg.structured, dict):
+                    findings = msg.structured.get("findings", [])
+                    if findings:
+                        content_parts.append("\n结构化 findings（请用 finding_ref 逐条引用回应）：")
+                        for fi, f in enumerate(findings):
+                            ref = f"{msg.agent.upper()}-{str(fi + 1).zfill(3)}"
+                            sev = f.get("severity", "?").upper() if isinstance(f, dict) else "?"
+                            cat = f.get("category", "?") if isinstance(f, dict) else "?"
+                            desc = f.get("description", "") if isinstance(f, dict) else str(f)
+                            content_parts.append(f"  [{ref}] {sev} {cat}: {desc}")
                 messages.append(
-                    {"role": "user", "content": f"[{msg.agent.upper()}] {msg.content}"}
+                    {"role": "user", "content": "\n".join(content_parts)}
                 )
 
         if not messages or messages[-1]["role"] == "assistant":

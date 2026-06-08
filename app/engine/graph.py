@@ -626,9 +626,14 @@ async def cross_review_node(state: DebateState) -> dict:
 
     new_cross_msgs = []
 
+    errored_agents = {
+        m["agent"] for m in round_msgs
+        if (m.get("structured") or {}).get("stance") == "error"
+    }
     active = [
         (name, agent) for name, agent in agents.items()
         if name not in state.get("skip_list", [])
+        and name not in errored_agents
     ]
 
     async def safe_cross(name, agent):

@@ -335,7 +335,7 @@ async def websocket_generate(websocket: WebSocket):
             "attackers", ["security", "performance", "correctness"]
         ),
         model=config_data.get("model", "claude-sonnet-4-20250514"),
-        max_tokens=config_data.get("max_tokens", 100_000),
+        max_tokens=config_data.get("max_tokens", DebateConfig().max_tokens),
     )
 
     stop_event = asyncio.Event()
