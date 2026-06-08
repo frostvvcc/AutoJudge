@@ -7,36 +7,14 @@ import DegradationBanner from '../components/workspace/DegradationBanner';
 import ProcessTransparencyPanel from '../components/workspace/ProcessTransparencyPanel';
 import AttackResponsePanel from '../components/workspace/AttackResponsePanel';
 import QualityReportPanel from '../components/workspace/QualityReportPanel';
+import TokenBudgetBar from '../components/workspace/TokenBudgetBar';
+import AgentLivePanel from '../components/workspace/AgentLivePanel';
 import CodeEditor from '../components/CodeEditor';
 import * as api from '../lib/api';
 import type { DebatePhase, DebateMessage, QualityReport } from '../types/debate';
-import { AGENT_LABELS, AGENT_DOTS } from '../types/debate';
-import { useRef, useEffect as useLayoutEffect } from 'react';
 
-function StreamingCard({ agent, text }: { agent: string; text: string }) {
-  const endRef = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-  }, [text]);
 
-  const dotClass = AGENT_DOTS[agent] ?? 'bg-gray-500';
-  const label = AGENT_LABELS[agent] ?? agent;
-
-  return (
-    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-      <div className="flex items-center gap-2 mb-3">
-        <div className={`w-2.5 h-2.5 rounded-full ${dotClass} animate-pulse`} />
-        <span className="text-sm font-semibold text-gray-700">{label}</span>
-        <span className="text-xs text-gray-400">正在输出...</span>
-      </div>
-      <div className="text-sm text-gray-600 leading-relaxed whitespace-pre-wrap max-h-[300px] overflow-y-auto font-mono">
-        {text}
-        <span className="inline-block w-2 h-4 bg-blue-500 animate-pulse ml-0.5 align-middle" />
-        <div ref={endRef} />
-      </div>
-    </div>
-  );
-}
+// StreamingCard removed — replaced by AgentLivePanel
 
 function inferPhase(status: string, statusText: string): DebatePhase {
   if (status === 'idle') return 'idle';
@@ -231,14 +209,23 @@ export default function WorkspacePage() {
           </div>
         )}
 
+        {/* Token budget bar */}
+        {!isReplay && debate.budget && status === 'running' && (
+          <TokenBudgetBar budget={debate.budget} />
+        )}
+
         {/* Degradation banner */}
         {!isReplay && debate.degradation && (
           <DegradationBanner data={debate.degradation} />
         )}
 
-        {/* Streaming output card */}
-        {!isReplay && debate.streamingAgent && debate.streamingText && (
-          <StreamingCard agent={debate.streamingAgent} text={debate.streamingText} />
+        {/* Agent live streaming panel */}
+        {!isReplay && status === 'running' && (
+          <AgentLivePanel
+            agentStreams={debate.agentStreams}
+            activeAgents={debate.activeAgents}
+            currentPhase={debate.currentPhase}
+          />
         )}
 
         {/* Full-width phase content */}

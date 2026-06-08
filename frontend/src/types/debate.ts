@@ -69,6 +69,16 @@ export interface DebateResult {
   metadata?: Record<string, unknown>;
 }
 
+export interface BudgetData {
+  spent: number;
+  total: number;
+  phase: string;
+  agent: string;
+  by_agent: Record<string, number>;
+  cache_read: number;
+  cache_creation: number;
+}
+
 export interface WSEvent {
   type: string;
   agent?: string;
@@ -85,6 +95,23 @@ export interface WSEvent {
   overall_verdict?: string;
   summary?: string;
 }
+
+export const PHASE_COLORS: Record<string, string> = {
+  plan: '#8B5CF6',
+  code_gen: '#3B82F6',
+  debate: '#F59E0B',
+  arbitration: '#EF4444',
+  judge: '#8B5CF6',
+  reserve: '#6B7280',
+};
+
+export const PHASE_LABELS: Record<string, string> = {
+  plan: '方案',
+  code_gen: '编码',
+  debate: '辩论',
+  arbitration: '仲裁',
+  judge: '评审',
+};
 
 export type DebatePhase =
   | 'idle'
