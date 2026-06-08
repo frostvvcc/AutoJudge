@@ -14,10 +14,13 @@ from app.api.routes.preferences import router as preferences_router
 from app.config import settings
 from app.db.engine import engine
 from app.db.models import Base
-from app.db.redis import init_redis, close_redis
+from app.db.redis import init_redis, close_redis, get_redis
 from app.api.middleware.pipeline import (
     RequestIDMiddleware,
+    StructuredLogMiddleware,
+    SecurityHeadersMiddleware,
     ErrorHandlerMiddleware,
+    AuditLogMiddleware,
 )
 from app.api.middleware.rate_limit import setup_rate_limiter
 from app.mcp.client import close_code_analysis_client
@@ -27,6 +30,7 @@ logging.basicConfig(
     level=logging.DEBUG if settings.debug else logging.INFO,
     format="%(asctime)s %(levelname)s %(name)s: %(message)s",
 )
+logger = logging.getLogger(__name__)
 
 setup_langsmith()
 
@@ -36,7 +40,21 @@ async def lifespan(app: FastAPI):
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
-    await init_redis()
+    redis = await init_redis()
+
+    from app.api.middleware.auth import auth_middleware
+    auth_middleware.set_redis(redis)
+
+    from app.engine.result_cache import result_cache
+    result_cache.set_redis(redis)
+    if settings.openai_api_key:
+        from openai import AsyncOpenAI
+        result_cache.embedding = AsyncOpenAI(api_key=settings.openai_api_key)
+
+    from app.memory.user_preferences import user_pref_store
+    user_pref_store.set_redis(redis)
+
+    logger.info("redis_injected components=auth,result_cache,user_preferences")
 
     from app.scheduler.jobs import scheduler
     scheduler.start()
@@ -56,7 +74,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(AuditLogMiddleware)
 app.add_middleware(ErrorHandlerMiddleware)
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(StructuredLogMiddleware)
 app.add_middleware(RequestIDMiddleware)
 
 app.add_middleware(

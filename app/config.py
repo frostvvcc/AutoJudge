@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     default_model: str = Field(default="claude-opus-4-6", alias="DEFAULT_MODEL")
     haiku_model: str = Field(default="claude-haiku-4-5-20251001", alias="HAIKU_MODEL")
 
+    # Embedding — uses OpenAI text-embedding-3-small (requires OPENAI_API_KEY).
+    # LLM calls use Anthropic Claude; embedding uses OpenAI; ChromaDB is configured
+    # with a custom OpenAI embedding function rather than its built-in default model.
     embedding_model: str = "text-embedding-3-small"
 
     max_rounds: int = 7

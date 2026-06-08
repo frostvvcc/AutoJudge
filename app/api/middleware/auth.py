@@ -8,9 +8,13 @@ logger = logging.getLogger(__name__)
 
 
 class AuthMiddleware:
-    """API key authentication (rate limiting moved to slowapi)."""
+    """API key authentication backed by Redis."""
 
     def __init__(self, redis_client=None):
+        self.redis = redis_client
+        self._available = redis_client is not None
+
+    def set_redis(self, redis_client):
         self.redis = redis_client
         self._available = redis_client is not None
 
@@ -31,3 +35,6 @@ class AuthMiddleware:
             )
 
         return api_key
+
+
+auth_middleware = AuthMiddleware()

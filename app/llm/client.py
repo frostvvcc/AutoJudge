@@ -38,6 +38,42 @@ async def _emit_stream(text: str):
 
 
 
+def _extract_pending_tools(content_blocks) -> tuple[bool, list]:
+    """Shared logic: scan response content for tool_use blocks.
+    Returns (has_submit, pending_tool_calls).
+    Works with both SDK objects (attr access) and dicts (key access).
+    """
+    pending = []
+    has_submit = False
+    for block in content_blocks:
+        block_type = getattr(block, "type", None) or (block.get("type") if isinstance(block, dict) else None)
+        if block_type != "tool_use":
+            continue
+        name = getattr(block, "name", None) or (block.get("name") if isinstance(block, dict) else None)
+        if name == "submit_response":
+            has_submit = True
+        else:
+            pending.append(block)
+    return has_submit, pending
+
+
+async def _execute_tool_calls(pending_tool_calls: list, turn: int = 0) -> list[dict]:
+    """Execute Coder verification tools and return tool_result messages."""
+    results = []
+    for tc in pending_tool_calls:
+        name = getattr(tc, "name", None) or tc.get("name")
+        tc_input = getattr(tc, "input", None) or tc.get("input", {})
+        tc_id = getattr(tc, "id", None) or tc.get("id")
+        result_text = await _execute_coder_tool(name, tc_input)
+        results.append({
+            "type": "tool_result",
+            "tool_use_id": tc_id,
+            "content": result_text,
+        })
+        logger.info("coder_tool_executed tool=%s turn=%d", name, turn)
+    return results
+
+
 # Anthropic SDK tool definitions (used only when llm_backend = "anthropic_api")
 ATTACKER_SUBMIT_TOOL = {
     "name": "submit_review",
@@ -269,7 +305,11 @@ async def _run_code_snippet(code: str, expected: str) -> str:
         except asyncio.TimeoutError:
             return "Execution timed out after 15s."
         except FileNotFoundError:
-            return "Docker is not available. Code verification requires Docker for sandbox isolation."
+            from app.engine.test_runner import SandboxUnavailableError
+            raise SandboxUnavailableError(
+                "Docker is required for code execution. "
+                "Install Docker or start the Docker daemon."
+            )
 
 
 async def _call_anthropic_api(
@@ -344,33 +384,12 @@ async def _call_anthropic_api(
         if agent != "coder" or response.stop_reason != "tool_use":
             break
 
-        # Check if model called a verification tool (not submit_response)
-        pending_tool_calls = []
-        has_submit = False
-        for block in response.content:
-            if block.type == "tool_use":
-                if block.name == "submit_response":
-                    has_submit = True
-                else:
-                    pending_tool_calls.append(block)
-
+        has_submit, pending_tool_calls = _extract_pending_tools(response.content)
         if has_submit or not pending_tool_calls:
             break
 
-        # Execute verification tools and continue conversation
         conv_messages.append({"role": "assistant", "content": response.content})
-        tool_results = []
-        for tc in pending_tool_calls:
-            result_text = await _execute_coder_tool(tc.name, tc.input)
-            tool_results.append({
-                "type": "tool_result",
-                "tool_use_id": tc.id,
-                "content": result_text,
-            })
-            logger.info(
-                "coder_tool_executed",
-                tool=tc.name, turn=turn,
-            )
+        tool_results = await _execute_tool_calls(pending_tool_calls, turn)
         conv_messages.append({"role": "user", "content": tool_results})
 
     elapsed_ms = int((time.monotonic() - start) * 1000)
@@ -559,27 +578,12 @@ async def _call_anthropic_proxy(
             if agent != "coder" or data.get("stop_reason") != "tool_use":
                 break
 
-            pending_tool_calls = []
-            has_submit = False
-            for block in data.get("content", []):
-                if block.get("type") == "tool_use":
-                    if block.get("name") == "submit_response":
-                        has_submit = True
-                    else:
-                        pending_tool_calls.append(block)
-
+            has_submit, pending_tool_calls = _extract_pending_tools(data.get("content", []))
             if has_submit or not pending_tool_calls:
                 break
 
             conv_messages.append({"role": "assistant", "content": data["content"]})
-            tool_results = []
-            for tc in pending_tool_calls:
-                result_text = await _execute_coder_tool(tc["name"], tc.get("input", {}))
-                tool_results.append({
-                    "type": "tool_result",
-                    "tool_use_id": tc["id"],
-                    "content": result_text,
-                })
+            tool_results = await _execute_tool_calls(pending_tool_calls, turn)
             conv_messages.append({"role": "user", "content": tool_results})
 
     elapsed_ms = int((time.monotonic() - start) * 1000)

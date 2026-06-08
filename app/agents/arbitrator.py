@@ -123,10 +123,10 @@ class ArbitratorAgent:
             messages=messages,
             tools=[ARBITRATOR_SUBMIT_TOOL],
             tool_choice={"type": "tool", "name": "submit_arbitration"},
-            max_tokens=budget.get_max_tokens("arbitrator"),
+            max_tokens=await budget.get_max_tokens("arbitrator"),
         )
 
-        budget.record("arbitrator", response.tokens_used)
+        await budget.record("arbitrator", response.tokens_used)
         budget.record_latency(response.latency_ms)
 
         return response.structured or {}
@@ -194,10 +194,10 @@ class ArbitratorAgent:
             messages=messages,
             tools=[review_tool],
             tool_choice={"type": "tool", "name": "submit_fix_review"},
-            max_tokens=budget.get_max_tokens("arbitrator"),
+            max_tokens=await budget.get_max_tokens("arbitrator"),
         )
 
-        budget.record("arbitrator", response.tokens_used)
+        await budget.record("arbitrator", response.tokens_used)
         budget.record_latency(response.latency_ms)
 
         if response.structured and "reviews" in response.structured:

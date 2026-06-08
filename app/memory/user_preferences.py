@@ -49,6 +49,10 @@ class UserPreferenceStore:
             except Exception as e:
                 logger.warning("%s: %s", "update_preferences_failed", e)
 
+    def set_redis(self, redis_client):
+        self.redis = redis_client
+        self._available = redis_client is not None
+
     def build_preference_prompt(self, prefs: dict) -> str:
         if not prefs:
             return ""
@@ -57,3 +61,6 @@ class UserPreferenceStore:
         for key, value in prefs.items():
             lines.append(f"  - {key}: {value}")
         return "\n".join(lines)
+
+
+user_pref_store = UserPreferenceStore()

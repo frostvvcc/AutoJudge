@@ -3,6 +3,16 @@ from __future__ import annotations
 import asyncio
 
 
+AGENTS_PER_PHASE = {
+    "plan": 1,
+    "code_gen": 1,
+    "debate": 4,
+    "arbitration": 1,
+    "judge": 1,
+    "reserve": 1,
+}
+
+
 class BudgetManager:
     """
     Token budget management with per-phase allocation and concurrency safety.
@@ -43,23 +53,27 @@ class BudgetManager:
     def can_continue(self, reserve: float = 0.15) -> bool:
         return self.spent < self.total * (1 - reserve)
 
-    def get_max_tokens(self, agent: str, phase: str | None = None) -> int:
-        agent_limit = self.agent_limits.get(agent, 4000)
-        remaining = self.total - self.spent
+    async def get_max_tokens(self, agent: str, phase: str | None = None) -> int:
+        async with self._lock:
+            agent_limit = self.agent_limits.get(agent, 4000)
+            remaining = self.total - self.spent
 
-        if phase and phase in self.PHASE_BUDGETS:
-            phase_total = int(self.total * self.PHASE_BUDGETS[phase])
-            phase_spent = self.by_phase.get(phase, 0)
-            phase_remaining = max(0, phase_total - phase_spent)
-            return min(agent_limit, max(500, phase_remaining))
+            if phase and phase in self.PHASE_BUDGETS:
+                phase_total = int(self.total * self.PHASE_BUDGETS[phase])
+                phase_spent = self.by_phase.get(phase, 0)
+                phase_remaining = max(0, phase_total - phase_spent)
+                agents_in_phase = AGENTS_PER_PHASE.get(phase, 1)
+                fair_share = max(500, phase_remaining // agents_in_phase)
+                return min(agent_limit, fair_share)
 
-        return min(agent_limit, max(500, int(remaining * 0.3)))
+            return min(agent_limit, max(500, int(remaining * 0.3)))
 
-    def record(self, agent: str, tokens: int, phase: str | None = None):
-        self.spent += tokens
-        self.by_agent[agent] = self.by_agent.get(agent, 0) + tokens
-        if phase:
-            self.by_phase[phase] = self.by_phase.get(phase, 0) + tokens
+    async def record(self, agent: str, tokens: int, phase: str | None = None):
+        async with self._lock:
+            self.spent += tokens
+            self.by_agent[agent] = self.by_agent.get(agent, 0) + tokens
+            if phase:
+                self.by_phase[phase] = self.by_phase.get(phase, 0) + tokens
 
     def record_cache(self, agent: str, cache_read: int, cache_creation: int):
         self.cache_stats["read"] += cache_read

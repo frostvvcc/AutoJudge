@@ -134,6 +134,10 @@ class ResultCache:
         except Exception as e:
             logger.warning("%s: %s", "cache_store_failed", e)
 
+    def set_redis(self, redis_client):
+        self.redis = redis_client
+        self._available = redis_client is not None
+
     async def _embed(self, text: str) -> list[float] | None:
         if self.embedding is None:
             return None
@@ -145,3 +149,6 @@ class ResultCache:
         except Exception as e:
             logger.warning("%s: %s", "embedding_failed", e)
             return None
+
+
+result_cache = ResultCache()

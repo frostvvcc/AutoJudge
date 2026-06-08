@@ -49,7 +49,7 @@ class BaseAgent(ABC):
         else:
             messages.append({"role": "user", "content": prompt})
 
-        max_tokens = budget.get_max_tokens(self.name)
+        max_tokens = await budget.get_max_tokens(self.name)
 
         response = await call_agent(
             agent=self.name,
@@ -61,7 +61,7 @@ class BaseAgent(ABC):
             max_tokens=max_tokens,
         )
 
-        budget.record(self.name, response.tokens_used)
+        await budget.record(self.name, response.tokens_used)
         budget.record_cache(
             self.name, response.cache_read, response.cache_creation
         )

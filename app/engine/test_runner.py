@@ -207,14 +207,14 @@ class TestRunner:
                     returncode=1, stdout="", stderr="执行超时"
                 )
             except FileNotFoundError:
-                logger.error(
-                    "docker_not_found: Docker is required for sandbox execution"
+                raise SandboxUnavailableError(
+                    "Docker is required for code execution. "
+                    "Install Docker or start the Docker daemon."
                 )
-                return _ExecResult(
-                    returncode=1,
-                    stdout="",
-                    stderr="Docker is not available. Code verification requires Docker for sandbox isolation.",
-                )
+
+
+class SandboxUnavailableError(RuntimeError):
+    pass
 
 
 @dataclass

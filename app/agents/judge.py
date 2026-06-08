@@ -180,10 +180,10 @@ class JudgeAgent:
             messages=messages,
             tools=[JUDGE_SUBMIT_TOOL],
             tool_choice={"type": "tool", "name": "submit_judgment"},
-            max_tokens=budget.get_max_tokens("judge"),
+            max_tokens=await budget.get_max_tokens("judge"),
         )
 
-        budget.record("judge", response.tokens_used)
+        await budget.record("judge", response.tokens_used)
         budget.record_latency(response.latency_ms)
 
         return response.structured or {}

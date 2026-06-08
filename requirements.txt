@@ -38,10 +38,11 @@ sqlalchemy[asyncio]>=2.0.30
 aiomysql>=0.2.0
 alembic>=1.13.0
 
-# Auth
+# Auth & Security
 PyJWT>=2.8.0
 passlib[bcrypt]>=1.7.4
 bcrypt>=4.1.0
+cryptography>=43.0.0
 
 # Task Queue
 arq>=0.26.0

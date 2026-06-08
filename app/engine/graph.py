@@ -220,9 +220,9 @@ async def plan_node(state: DebateState) -> dict:
             system_prompt=system,
             messages=messages,
             model=get_model_for_agent("planner"),
-            max_tokens=budget.get_max_tokens("coder"),
+            max_tokens=await budget.get_max_tokens("coder"),
         )
-        budget.record("coder", response.tokens_used)
+        await budget.record("coder", response.tokens_used)
         record_agent_call("coder", response.tokens_used, time.monotonic() - start)
         plans_content = response.content
 
