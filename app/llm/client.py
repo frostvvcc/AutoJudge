@@ -642,20 +642,24 @@ async def _call_anthropic_proxy(
 # ─── Unified entry point ─────────────────────────────────────────────────────
 
 def _is_retryable(exc: BaseException) -> bool:
-    if isinstance(exc, TimeoutError):
+    if isinstance(exc, (TimeoutError, ConnectionError, OSError)):
         return True
     err_str = str(exc).lower()
-    if isinstance(exc, RuntimeError) and ("timed out" in err_str or "503" in err_str or "524" in err_str):
+    if isinstance(exc, RuntimeError) and any(
+        kw in err_str for kw in ("timed out", "502", "503", "524", "bad gateway", "upstream")
+    ):
         return True
     try:
         import httpx
-        if isinstance(exc, (httpx.ReadTimeout, httpx.ProxyError, httpx.RemoteProtocolError)):
+        if isinstance(exc, (httpx.ConnectError, httpx.ReadTimeout, httpx.ProxyError,
+                            httpx.RemoteProtocolError, httpx.ConnectTimeout)):
             return True
     except ImportError:
         pass
     try:
         import anthropic
-        if isinstance(exc, (anthropic.APITimeoutError, anthropic.RateLimitError)):
+        if isinstance(exc, (anthropic.APITimeoutError, anthropic.RateLimitError,
+                            anthropic.APIConnectionError)):
             return True
     except ImportError:
         pass
@@ -663,8 +667,8 @@ def _is_retryable(exc: BaseException) -> bool:
 
 
 @retry(
-    stop=stop_after_attempt(3),
-    wait=wait_exponential(multiplier=1, min=2, max=30),
+    stop=stop_after_attempt(5),
+    wait=wait_exponential(multiplier=1, min=3, max=45),
     retry=retry_if_exception(_is_retryable),
 )
 async def call_agent(
