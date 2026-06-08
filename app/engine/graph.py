@@ -412,8 +412,10 @@ async def coder_node(state: DebateState) -> dict:
         for m in last_attacker_msgs:
             s = m.get("structured")
             if s and isinstance(s, dict):
-                for f in s.get("findings", []):
-                    fid = f.get("finding_id", f"{m['agent'].upper()}-???")
+                for fi, f in enumerate(s.get("findings", [])):
+                    if not isinstance(f, dict):
+                        continue
+                    fid = f.get("finding_id", f"{m['agent'].upper()}-{str(fi+1).zfill(3)}")
                     sev = f.get("severity", "?")
                     cat = f.get("category", "?")
                     desc = f.get("description", "")
@@ -629,6 +631,8 @@ def _build_structured_findings_summary(round_msgs: list[dict], exclude_agent: st
         stance = structured.get("stance", "unknown")
         if findings:
             for f in findings:
+                if not isinstance(f, dict):
+                    continue
                 sev = f.get("severity", "unknown").upper()
                 cat = f.get("category", "")
                 desc = f.get("description", "")
@@ -825,6 +829,8 @@ def _extract_unresolved_disputes(state: DebateState) -> list[dict]:
             findings = structured.get("findings", [])
             if findings:
                 for finding in findings:
+                    if not isinstance(finding, dict):
+                        continue
                     disputes.append({
                         "attacker": msg["agent"],
                         "finding": finding.get("description", ""),
@@ -1671,6 +1677,8 @@ async def run_debate_with_graph(
             structured = msg.get("structured")
             if structured and isinstance(structured, dict):
                 for f in structured.get("findings", []):
+                    if not isinstance(f, dict):
+                        continue
                     finding_key = f.get("category", "") or f.get("description", "")
                     ref_match = any(
                         finding_key.lower() in ref.lower() or ref.lower() in finding_key.lower()
