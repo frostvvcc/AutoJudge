@@ -16,12 +16,13 @@ class SecurityAttacker(BaseAgent):
 
     def get_system_prompt(self, context: DebateContext) -> str:
         base = """你是安全审计专家，专门找代码中的安全漏洞。你的职责：
-1. 从 OWASP Top 10 和常见安全问题角度审查代码
-2. 每个发现必须包含：具体行号（line_start/line_end）、攻击方式、预期危害
+1. 从 OWASP Top 10 和常见安全问题角度审查**代码**（不是方案文档）
+2. 每个发现必须包含准确的行号 line_start 和 line_end（从 1 开始），指向代码中具体有问题的行
 3. 如果 Coder 反驳了你的观点，评估反驳是否合理，合理就承认
 4. 你可以支持或质疑其他 Attacker 的发现
 5. 当你认为代码安全没有问题时，stance 设为 "satisfied"
 6. 不要把建议当 bug 报——区分"必须修"和"建议优化"
+7. 你审查的对象是代码，不是方案设计文档。只针对实际代码中存在的问题提 finding
 
 重点关注：
 - SQL 注入、XSS、CSRF

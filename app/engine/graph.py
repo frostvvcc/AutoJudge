@@ -81,6 +81,20 @@ async def _notify(event: dict):
             pass
 
 
+async def _notify_budget(budget: 'BudgetManager', phase: str, agent: str):
+    """Push real-time token budget snapshot to the frontend."""
+    await _notify({
+        "type": "budget_update",
+        "spent": budget.spent,
+        "total": budget.total,
+        "phase": phase,
+        "agent": agent,
+        "by_agent": dict(budget.by_agent),
+        "cache_read": budget.cache_stats.get("read", 0),
+        "cache_creation": budget.cache_stats.get("creation", 0),
+    })
+
+
 def _make_stream_cb(agent_name: str):
     """Create a streaming callback that sends text deltas to the frontend."""
     async def _on_stream(delta: str):
@@ -212,6 +226,7 @@ async def plan_node(state: DebateState) -> dict:
         start = time.monotonic()
         response = await coder_agent.speak(ctx, adjust_prompt, budget)
         record_agent_call("coder", response.tokens_used, time.monotonic() - start)
+        await _notify_budget(budget, "plan", "coder")
         plans_content = response.content
     else:
         await _notify({"type": "phase_change", "phase": "plan"})
@@ -239,6 +254,7 @@ async def plan_node(state: DebateState) -> dict:
         )
         await budget.record("coder", response.tokens_used)
         record_agent_call("coder", response.tokens_used, time.monotonic() - start)
+        await _notify_budget(budget, "plan", "planner")
         plans_content = response.content
 
     await _notify({"type": "plan_proposal", "content": plans_content})
@@ -307,43 +323,65 @@ async def coder_node(state: DebateState) -> dict:
         selected_plan = state.get("selected_plan", "")
         if selected_plan:
             prompt = (
-                f"根据以下需求和确认的方案生成代码：\n{ctx.requirement}\n\n"
+                f"根据以下需求和确认的方案生成 **完整的、可直接运行的** 代码：\n{ctx.requirement}\n\n"
                 f"确认的方案：\n{selected_plan}\n\n"
-                "请严格按照方案实现。提交前用 run_code_snippet 自测。"
+                "严格要求：\n"
+                "1. 必须是完整实现，不是 demo、stub、示例片段或 PoC\n"
+                "2. 必须包含需求中提到的所有核心功能（如认证、加密、数据库操作等）\n"
+                "3. 代码必须可以直接运行，包含所有 import 和必要的类/函数定义\n"
+                "4. 提交前用 run_code_snippet 自测确认能正常运行\n"
             )
         else:
             prompt = (
-                f"根据以下需求生成代码，并简要说明你的设计思路：\n{ctx.requirement}\n\n"
-                "提交前请用 run_code_snippet 自测代码能否正常运行。"
+                f"根据以下需求生成 **完整的、可直接运行的** 代码：\n{ctx.requirement}\n\n"
+                "严格要求：\n"
+                "1. 必须是完整实现，不是 demo 或示例片段\n"
+                "2. 包含所有核心功能、import 和类/函数定义\n"
+                "3. 提交前用 run_code_snippet 自测确认能正常运行\n"
             )
         if ctx.extra_context:
             prompt += f"\n\n补充需求：{ctx.extra_context}"
     else:
         current = state.get("current_code", "")
-        prompt = (
-            "请回应上一轮各 Attacker 的意见。"
-            "对每个攻击：如果合理，承认并修复；如果不合理，调用工具验证后给出反驳证据。"
-            "修复后必须通过 updated_code 提交完整的新版代码（不要只贴片段）。"
-            "提交前请用 run_code_snippet 自测修复后的代码。"
-        )
-        if current:
-            prompt += f"\n\n你当前的完整代码如下（在此基础上修改）：\n```\n{current}\n```"
 
+        # Build structured finding list with IDs for Coder to reference
         last_attacker_msgs = [
             m for m in state.get("messages", [])
             if m.get("round") == state["round"]
             and m["agent"] in ("security", "performance", "correctness")
         ]
+        finding_list_lines = []
         fix_descriptions = []
         for m in last_attacker_msgs:
             s = m.get("structured")
             if s and isinstance(s, dict):
                 for f in s.get("findings", []):
-                    fix_descriptions.append(f.get("description", ""))
+                    fid = f.get("finding_id", f"{m['agent'].upper()}-???")
+                    sev = f.get("severity", "?")
+                    cat = f.get("category", "?")
+                    desc = f.get("description", "")
+                    finding_list_lines.append(f"  {fid}: [{sev}] {cat} — {desc[:120]}")
+                    fix_descriptions.append(desc)
+
+        prompt = (
+            "请逐条回应上一轮 Attacker 提出的问题。\n"
+            "对每个攻击：如果合理 → accept_and_fix 并修复代码；如果不合理 → rebut_with_evidence 并给出证据。\n\n"
+        )
+        if finding_list_lines:
+            prompt += "需要回应的问题（finding_ref 必须使用下面的 ID，如 SECURITY-001）：\n"
+            prompt += "\n".join(finding_list_lines)
+            prompt += "\n\n"
+        prompt += (
+            "修复后必须通过 updated_code 提交**完整的**新版代码（在上一版基础上修改，不要重写或提交测试脚本）。\n"
+            "提交前请用 run_code_snippet 自测修复后的代码。"
+        )
+        if current:
+            prompt += f"\n\n你当前的完整代码如下（在此基础上修改）：\n```\n{current}\n```"
+
         if fix_descriptions:
-            fix_patterns = FixPatternStore()
+            fix_patterns_store = FixPatternStore()
             for desc in fix_descriptions[:3]:
-                fixes = await fix_patterns.retrieve_fixes(desc, top_k=2)
+                fixes = await fix_patterns_store.retrieve_fixes(desc, top_k=2)
                 if fixes:
                     prompt += f"\n\n历史修复参考（{desc[:40]}）：\n" + "\n".join(fixes[:2])
 
@@ -352,13 +390,36 @@ async def coder_node(state: DebateState) -> dict:
     response = await coder_agent.speak(ctx, prompt, budget)
     set_stream_callback(None)
     record_agent_call("coder", response.tokens_used, time.monotonic() - start)
+    await _notify_budget(budget, "code_gen" if ctx.round == 1 else "debate", "coder")
+
+    # --- Code quality gate: reject demo/stub/test scripts ---
+    prev_code = state.get("current_code", "")
+    new_code = response.code or ""
+    MIN_FIRST_CODE_LEN = 200
+
+    if ctx.round == 1 and new_code and len(new_code) < MIN_FIRST_CODE_LEN:
+        logger.warning("coder_code_too_short round=1 len=%d, retrying", len(new_code))
+        retry_prompt = (
+            f"你提交的代码只有 {len(new_code)} 字节，这不是完整实现。\n"
+            "请重新生成**完整的、包含所有核心功能的**代码。\n"
+            "不要提交 demo、示例片段或测试脚本。"
+        )
+        set_stream_callback(_make_stream_cb("coder"))
+        response = await coder_agent.speak(ctx, retry_prompt, budget)
+        set_stream_callback(None)
+        new_code = response.code or new_code
+
+    if ctx.round > 1 and prev_code and new_code and len(new_code) < len(prev_code) * 0.3:
+        logger.warning("coder_code_regressed round=%d prev=%d new=%d, using prev",
+                        ctx.round, len(prev_code), len(new_code))
+        new_code = prev_code
 
     await _notify({"type": "stream_end", "agent": "coder"})
     new_msg = {
         "agent": "coder",
         "content": response.content,
         "round": ctx.round,
-        "code": response.code,
+        "code": new_code or None,
         "structured": response.structured,
     }
     await _notify({"type": "message", **new_msg})
@@ -366,7 +427,7 @@ async def coder_node(state: DebateState) -> dict:
 
     return {
         "round": ctx.round,
-        "current_code": response.code or state.get("current_code", ""),
+        "current_code": new_code or state.get("current_code", ""),
         "messages": [new_msg],
         "budget_spent": budget.spent,
                 "budget_by_agent": dict(budget.by_agent),
@@ -384,15 +445,22 @@ async def _attacker_node(
     await _notify({"type": "agent_start", "agent": agent_name})
     ctx, budget = _build_context(state)
 
+    current_code = state.get("current_code", "")
+    line_count = len(current_code.split("\n")) if current_code else 0
+
     if state["round"] <= 1:
         prompt = (
-            "审查 Coder 提交的代码，从你的专业角度找出问题。"
-            "每个 finding 必须标注 line_start 和 line_end（代码行号），不可省略。"
+            "审查 Coder 提交的代码，从你的专业角度找出问题。\n\n"
+            "**关于行号（极其重要）**：\n"
+            f"当前代码共 {line_count} 行。每个 finding 必须填写 line_start 和 line_end（从 1 开始的行号）。\n"
+            "例如：问题在第 15-20 行，则 line_start=15, line_end=20。单行问题则两者相同。\n"
+            "没有行号的 finding 会被系统自动丢弃，所以务必填写。"
         )
     else:
         prompt = (
-            "审查 Coder 的最新修复。如果之前的问题已修复，确认。"
-            "如果有新问题，指出并标注 line_start/line_end 行号。"
+            "审查 Coder 的最新修复。如果之前的问题已修复，确认。\n"
+            "如果有新问题，指出并标注 line_start/line_end 行号。\n"
+            f"当前代码共 {line_count} 行，行号从 1 开始。\n"
             "如果没有新问题了，stance 设为 satisfied。"
         )
 
@@ -402,6 +470,7 @@ async def _attacker_node(
         response = await agent_instance.speak(ctx, prompt, budget)
         set_stream_callback(None)
         record_agent_call(agent_name, response.tokens_used, time.monotonic() - start)
+        await _notify_budget(budget, "debate", agent_name)
         await _notify({"type": "stream_end", "agent": agent_name})
         structured = response.structured
         if not structured or not isinstance(structured, dict):
@@ -414,6 +483,22 @@ async def _attacker_node(
             }
             logger.warning("attacker_%s_no_structured round=%d, inferred stance=%s",
                            agent_name, state["round"], structured["stance"])
+
+        # --- Post-process findings: assign IDs + fill missing line_start ---
+        code_lines = (state.get("current_code") or "").split("\n")
+        for i, f in enumerate(structured.get("findings", [])):
+            f["finding_id"] = f"{agent_name.upper()}-{i + 1:03d}"
+
+            if not f.get("line_start") and code_lines:
+                desc_lower = (f.get("description", "") + " " + f.get("category", "")).lower()
+                keywords = [w for w in desc_lower.split() if len(w) >= 4 and w.isalpha()]
+                for ln_idx, line in enumerate(code_lines):
+                    line_lower = line.lower()
+                    if any(kw in line_lower for kw in keywords[:5]):
+                        f["line_start"] = ln_idx + 1
+                        f["line_end"] = f.get("line_end") or (ln_idx + 1)
+                        break
+
         new_msg = {
             "agent": agent_name,
             "content": response.content,
@@ -430,7 +515,30 @@ async def _attacker_node(
         }
     except Exception as e:
         logger.warning("graph_%s_failed error=%s", agent_name, e)
-        return {}
+        set_stream_callback(None)
+        await _notify({"type": "stream_end", "agent": agent_name})
+
+        error_short = str(e)[:200]
+        is_proxy_error = any(kw in error_short.lower() for kw in ["502", "503", "400", "proxy", "timeout", "upstream"])
+        await _notify({
+            "type": "agent_error",
+            "agent": agent_name,
+            "error": error_short,
+            "is_proxy_error": is_proxy_error,
+        })
+
+        return {
+            "messages": [{
+                "agent": agent_name,
+                "content": f"[系统错误] {agent_name} 调用失败: {error_short}",
+                "round": state["round"],
+                "structured": {
+                    "stance": "error",
+                    "message": error_short,
+                    "findings": [],
+                },
+            }],
+        }
 
 
 async def security_node(state: DebateState) -> dict:
@@ -605,6 +713,26 @@ def check_consensus_edge(state: DebateState) -> str:
     if state.get("converged"):
         return "converged"
 
+    # If ALL attackers failed this round (stance=error or no messages), stop immediately
+    current_round = state.get("round", 0)
+    skip_list = set(state.get("skip_list", []))
+    active_attackers = {"security", "performance", "correctness"} - skip_list
+    round_attacker_msgs = [
+        m for m in state.get("messages", [])
+        if m.get("round") == current_round
+        and m["agent"] in active_attackers
+    ]
+    if active_attackers and round_attacker_msgs:
+        all_errored = all(
+            (m.get("structured") or {}).get("stance") == "error"
+            for m in round_attacker_msgs
+        )
+        if all_errored:
+            return "budget_exceeded"
+
+    if active_attackers and not round_attacker_msgs:
+        return "budget_exceeded"
+
     budget_total = state.get("budget_total", 100_000)
     budget_spent = state.get("budget_spent", 0)
     if budget_spent >= budget_total * 0.85:
@@ -725,6 +853,7 @@ async def arbitration_node(state: DebateState) -> dict:
     })
 
     arbitration_result = await arbitrator_agent.arbitrate(ctx, budget, disputes)
+    await _notify_budget(budget, "arbitration", "arbitrator")
 
     await _notify({
         "type": "arbitration_complete",
@@ -863,6 +992,7 @@ async def final_fix_node(state: DebateState) -> dict:
         start = time.monotonic()
         response = await coder_agent.speak(ctx, current_prompt, budget)
         record_agent_call("coder", response.tokens_used, time.monotonic() - start)
+        await _notify_budget(budget, "arbitration", "coder")
 
         if response.code:
             new_code = response.code
@@ -891,6 +1021,7 @@ async def final_fix_node(state: DebateState) -> dict:
 
     ctx.current_code = new_code
     reviews = await arbitrator_agent.review_fixes(ctx, budget, must_fix_items)
+    await _notify_budget(budget, "arbitration", "arbitrator")
 
     not_fixed = [r for r in reviews if r.get("status") != "fixed"]
 
@@ -913,6 +1044,7 @@ async def final_fix_node(state: DebateState) -> dict:
         start = time.monotonic()
         refix_response = await coder_agent.speak(ctx, refix_prompt, budget)
         record_agent_call("coder", refix_response.tokens_used, time.monotonic() - start)
+        await _notify_budget(budget, "arbitration", "coder")
 
         if refix_response.code:
             new_code = refix_response.code
@@ -959,6 +1091,7 @@ async def judge_node(state: DebateState) -> dict:
     report = await judge_agent.summarize(ctx, budget)
     set_stream_callback(None)
     await _notify({"type": "stream_end", "agent": "judge"})
+    await _notify_budget(budget, "judge", "judge")
     return {
         "judge_report": report,
         "budget_spent": budget.spent,
@@ -1049,6 +1182,7 @@ async def focused_retry_node(state: DebateState) -> dict:
     start = time.monotonic()
     response = await coder_agent.speak(ctx, fix_prompt, budget)
     record_agent_call("coder", response.tokens_used, time.monotonic() - start)
+    await _notify_budget(budget, "debate", "coder")
 
     new_code = response.code or state.get("current_code", "")
     fix_msg = {

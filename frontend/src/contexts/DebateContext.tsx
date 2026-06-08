@@ -8,6 +8,7 @@ import {
 } from 'react';
 import type { ReactNode } from 'react';
 import type {
+  BudgetData,
   DebateMessage,
   DebateResult,
   DebateStatus,
@@ -73,6 +74,8 @@ interface DebateState {
   streamingAgent: string | null;
   streamingText: string;
   visitedPhases: Set<string>;
+  budget: BudgetData | null;
+  agentStreams: Record<string, string>;
   submit: (task: string, language: string, mode?: string) => void;
   skipAttacker: (attacker: string) => void;
   stop: () => void;
@@ -108,6 +111,8 @@ export function DebateProvider({ children }: { children: ReactNode }) {
   const [streamingAgent, setStreamingAgent] = useState<string | null>(null);
   const [streamingText, setStreamingText] = useState('');
   const [visitedPhases, setVisitedPhases] = useState<Set<string>>(new Set());
+  const [budget, setBudget] = useState<BudgetData | null>(null);
+  const [agentStreams, setAgentStreams] = useState<Record<string, string>>({});
 
   const wsSendRef = useRef<(data: Record<string, unknown>) => void>(() => {});
   const reconnectRef = useRef<{ task: string; language: string; mode: string; retries: number } | null>(null);
@@ -151,6 +156,7 @@ export function DebateProvider({ children }: { children: ReactNode }) {
         setActiveAgents(new Set());
         setStreamingAgent(null);
         setStreamingText('');
+        setAgentStreams({});
         break;
 
       case 'agent_start':
@@ -169,25 +175,89 @@ export function DebateProvider({ children }: { children: ReactNode }) {
           next.add(event.agent!);
           return next;
         });
+        setAgentStreams((prev) => ({ ...prev, [event.agent!]: '' }));
         break;
 
       case 'stream': {
-        const delta = (event as unknown as Record<string, unknown>).delta as string | undefined;
+        const raw = event as unknown as Record<string, unknown>;
+        const delta = raw.delta as string | undefined;
+        const streamAgent = raw.agent as string | undefined;
         if (delta) {
           setStreamingText((prev) => prev + delta);
+          if (streamAgent) {
+            setAgentStreams((prev) => ({
+              ...prev,
+              [streamAgent]: (prev[streamAgent] ?? '') + delta,
+            }));
+          }
         }
         break;
       }
 
       case 'stream_end':
+        if (event.agent) {
+          setAgentStreams((prev) => {
+            const next = { ...prev };
+            delete next[event.agent!];
+            return next;
+          });
+        }
         setStreamingAgent(null);
         setStreamingText('');
         break;
+
+      case 'agent_error': {
+        const agentName = event.agent ?? 'unknown';
+        const errMsg = (event as unknown as Record<string, unknown>).error as string ?? '';
+        const isProxy = (event as unknown as Record<string, unknown>).is_proxy_error as boolean;
+
+        // Remove from active agents
+        if (event.agent) {
+          setActiveAgents((prev) => {
+            const next = new Set(prev);
+            next.delete(event.agent!);
+            return next;
+          });
+          setAgentStreams((prev) => {
+            const next = { ...prev };
+            delete next[event.agent!];
+            return next;
+          });
+        }
+
+        if (isProxy) {
+          setError(`API 代理服务异常：${agentName} 调用失败 (${errMsg.substring(0, 80)})。请检查代理服务状态后重试。`);
+          setStatus('error');
+          setStatusText(`${agentName} API 调用失败`);
+        } else {
+          setStatusText(`⚠️ ${agentName} 调用失败，系统将尝试继续...`);
+        }
+        break;
+      }
+
+      case 'budget_update': {
+        const raw = event as unknown as Record<string, unknown>;
+        setBudget({
+          spent: (raw.spent as number) ?? 0,
+          total: (raw.total as number) ?? 100000,
+          phase: (raw.phase as string) ?? '',
+          agent: (raw.agent as string) ?? '',
+          by_agent: (raw.by_agent as Record<string, number>) ?? {},
+          cache_read: (raw.cache_read as number) ?? 0,
+          cache_creation: (raw.cache_creation as number) ?? 0,
+        });
+        break;
+      }
 
       case 'message':
         if (event.agent) {
           setStreamingAgent(null);
           setStreamingText('');
+          setAgentStreams((prev) => {
+            const next = { ...prev };
+            delete next[event.agent!];
+            return next;
+          });
           setMessages((prev) => [
             ...prev,
             {
@@ -361,6 +431,8 @@ export function DebateProvider({ children }: { children: ReactNode }) {
       setActiveAgents(new Set());
       setStreamingAgent(null);
       setStreamingText('');
+      setBudget(null);
+      setAgentStreams({});
       startTimer();
 
       const ws = new WebSocket(getWsUrl());
@@ -470,6 +542,8 @@ export function DebateProvider({ children }: { children: ReactNode }) {
     setStreamingAgent(null);
     setStreamingText('');
     setVisitedPhases(new Set());
+    setBudget(null);
+    setAgentStreams({});
   }, [stopTimer]);
 
   const respondToInterrupt = useCallback((response: Record<string, unknown>) => {
@@ -502,6 +576,8 @@ export function DebateProvider({ children }: { children: ReactNode }) {
         streamingAgent,
         streamingText,
         visitedPhases,
+        budget,
+        agentStreams,
         submit,
         skipAttacker,
         stop,

@@ -12,10 +12,12 @@ class CorrectnessAttacker(BaseAgent):
     def get_system_prompt(self, context: DebateContext) -> str:
         base = """你是质量工程师，专门找逻辑错误和边界问题。你的职责：
 1. 关注边界输入、类型错误、竞态条件、错误处理、业务逻辑遗漏
-2. 给出能触发问题的具体输入和预期 vs 实际行为，并标注具体行号（line_start/line_end）
-3. 你可以支持其他 Attacker 的发现并补充新的角度
-4. 如果 Coder 反驳了你的观点，评估反驳是否合理，合理就承认
-5. 当你认为正确性没有问题时，stance 设为 "satisfied"
+2. 每个发现必须包含准确的行号 line_start 和 line_end（从 1 开始），指向代码中具体有问题的行
+3. 给出能触发问题的具体输入（test_input 字段）和预期 vs 实际行为
+4. 你可以支持其他 Attacker 的发现并补充新的角度
+5. 如果 Coder 反驳了你的观点，评估反驳是否合理，合理就承认
+6. 当你认为正确性没有问题时，stance 设为 "satisfied"
+7. 你审查的对象是代码，不是方案设计文档。只针对实际代码中存在的问题提 finding
 
 重点关注：
 - 空值 / None / undefined 处理

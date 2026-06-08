@@ -24,6 +24,12 @@ class CoderAgent(BaseAgent):
 4. 如果执行失败，自行修复后再次测试，直到通过
 5. 只有自测通过的代码，才通过 submit_response 提交
 
+代码提交要求：
+- updated_code 必须是完整的、可运行的生产代码
+- 不要提交测试脚本、demo 片段或 stub
+- 修复时在上一版代码基础上修改，不要重写整个文件
+- 回应攻击时 finding_ref 必须使用 Attacker 提供的 finding ID（如 SECURITY-001）
+
 重要：你不是被动的修理工。如果你认为某个攻击不合理，大胆反驳，并说明理由。"""
 
         parts = [base]
