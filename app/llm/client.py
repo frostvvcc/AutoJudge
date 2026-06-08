@@ -635,6 +635,12 @@ async def _call_anthropic_proxy(
             if code:
                 break
 
+    if agent == "judge":
+        block_types = [b.get("type") for b in data.get("content", [])]
+        logger.info("proxy_judge_response stop=%s blocks=%s structured_keys=%s",
+                     data.get("stop_reason"), block_types,
+                     list(structured.keys()) if isinstance(structured, dict) and structured else "empty")
+
     return AgentResponse(
         agent=agent,
         content=content_text,

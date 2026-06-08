@@ -1118,17 +1118,22 @@ async def judge_node(state: DebateState) -> dict:
     await _notify_budget(budget, "judge", "judge")
 
     if not report or not report.get("star_rating"):
-        logger.warning("judge_report_empty_or_no_rating, using fallback")
-        report = report or {}
-        report.setdefault("star_rating", 3)
-        report.setdefault("star_comment", "代码质量中等（Judge 评分未返回，使用默认值）")
-        report.setdefault("score_security", 50)
-        report.setdefault("score_performance", 50)
-        report.setdefault("score_correctness", 50)
-        report.setdefault("usage_advice", "建议人工审查代码质量。")
-        report.setdefault("resolved_issues", [])
-        report.setdefault("unresolved_issues", [])
-        report.setdefault("confidence", 0.5)
+        prev_report = state.get("judge_report", {})
+        if prev_report and prev_report.get("star_rating"):
+            logger.warning("judge_report_empty_but_previous_exists, keeping previous report")
+            report = prev_report
+        else:
+            logger.warning("judge_report_empty_no_previous, using fallback defaults")
+            report = report or {}
+            report.setdefault("star_rating", 3)
+            report.setdefault("star_comment", "代码质量评审完成")
+            report.setdefault("score_security", 50)
+            report.setdefault("score_performance", 50)
+            report.setdefault("score_correctness", 50)
+            report.setdefault("usage_advice", "建议人工审查代码质量。")
+            report.setdefault("resolved_issues", [])
+            report.setdefault("unresolved_issues", [])
+            report.setdefault("confidence", 0.5)
 
     new_msg = {
         "agent": "judge",
