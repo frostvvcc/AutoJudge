@@ -163,7 +163,7 @@ export function DebateProvider({ children }: { children: ReactNode }) {
         if (planConfirmedRef.current && event.agent === 'coder') {
           break;
         }
-        setStatusText(`${event.agent} 正在分析...`);
+        // Don't overwrite phase-specific status text from 'status' events
         setStreamingAgent(event.agent ?? null);
         setStreamingText('');
         if (['security', 'performance', 'correctness'].includes(event.agent ?? '')) {

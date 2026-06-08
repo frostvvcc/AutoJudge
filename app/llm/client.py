@@ -64,6 +64,10 @@ async def _execute_tool_calls(pending_tool_calls: list, turn: int = 0) -> list[d
         name = getattr(tc, "name", None) or tc.get("name")
         tc_input = getattr(tc, "input", None) or tc.get("input", {})
         tc_id = getattr(tc, "id", None) or tc.get("id")
+
+        tool_label = "自测代码" if name == "run_code_snippet" else "查询文档"
+        await _emit_stream(f"\n🔧 Coder {tool_label}（第 {turn + 1} 轮）...\n")
+
         result_text = await _execute_coder_tool(name, tc_input)
         results.append({
             "type": "tool_result",
@@ -71,6 +75,10 @@ async def _execute_tool_calls(pending_tool_calls: list, turn: int = 0) -> list[d
             "content": result_text,
         })
         logger.info("coder_tool_executed tool=%s turn=%d", name, turn)
+
+        passed = "succeeded" in result_text.lower() or "pass" in result_text.lower()
+        status = "✅ 通过" if passed else "❌ 失败，修复中..."
+        await _emit_stream(f"  结果：{status}\n")
     return results
 
 
@@ -351,14 +359,14 @@ async def _call_anthropic_api(
     total_cache_creation = 0
 
     start = time.monotonic()
-    max_tool_turns = 5
+    max_tool_turns = 3
 
     for turn in range(max_tool_turns + 1):
         is_last_turn = (turn == max_tool_turns)
         if agent == "coder":
             effective_choice = (
                 {"type": "tool", "name": "submit_response"}
-                if is_last_turn
+                if is_last_turn or turn >= 2
                 else {"type": "any"}
             )
         else:
@@ -559,7 +567,7 @@ async def _call_anthropic_proxy(
     total_tokens = 0
     total_cache_read = 0
     total_cache_creation = 0
-    max_tool_turns = 10 if agent == "coder" else 0
+    max_tool_turns = 3 if agent == "coder" else 0
 
     async with httpx.AsyncClient(timeout=600) as http:
         for turn in range(max_tool_turns + 1):
@@ -568,7 +576,7 @@ async def _call_anthropic_proxy(
             if agent == "coder":
                 effective_choice = (
                     {"type": "tool", "name": "submit_response"}
-                    if is_last_turn
+                    if is_last_turn or turn >= 2
                     else {"type": "any"}
                 )
             else:
