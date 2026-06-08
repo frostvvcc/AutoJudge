@@ -36,6 +36,17 @@ def _max_int(left: int, right: int) -> int:
     """Reducer: take the higher budget_spent value from parallel nodes."""
     return max(left, right)
 
+
+def _merge_dicts(left: dict, right: dict) -> dict:
+    """Reducer: merge dicts from parallel nodes (right overwrites left on conflict)."""
+    merged = dict(left)
+    for k, v in right.items():
+        if k in merged and isinstance(merged[k], (int, float)) and isinstance(v, (int, float)):
+            merged[k] = merged[k] + v
+        else:
+            merged[k] = v
+    return merged
+
 from app.llm.client import set_stream_callback
 from app.agents.coder import CoderAgent
 from app.agents.security_attacker import SecurityAttacker
@@ -121,9 +132,9 @@ class DebateState(TypedDict):
     converged: bool
     budget_spent: Annotated[int, _max_int]
     budget_total: int
-    budget_by_agent: dict
-    budget_by_phase: dict
-    budget_cache_stats: dict
+    budget_by_agent: Annotated[dict, _merge_dicts]
+    budget_by_phase: Annotated[dict, _merge_dicts]
+    budget_cache_stats: Annotated[dict, _merge_dicts]
     judge_report: dict
     arbitration_result: dict
     must_fix_items: list[dict]
