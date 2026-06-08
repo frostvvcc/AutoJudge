@@ -198,13 +198,40 @@ def _build_context(state: DebateState) -> tuple[DebateContext, BudgetManager]:
 
 # ─── Graph nodes ────────────────────────────────────────────────────────────
 
-PLAN_PHASE_PROMPT = """根据以下需求，设计 2 个不同方向的实现方案。
+PLAN_PHASE_PROMPT = """根据以下需求，设计恰好 2 个不同方向的实现方案。
 
-要求：
-1. 两个方案必须有明确的差异（不是微调，是不同的技术路线）
-2. 每个方案说明：技术选型、核心流程、安全考虑、不包含什么
-3. 给每个方案一个简短标签（如"轻量级""生产级""安全优先"）
-4. 不写代码，只说方案
+**必须严格按以下格式输出，不要偏离：**
+
+## 方案 A：「简短标签」
+
+**技术选型**
+- 框架：...
+- 数据库/存储：...
+- 认证/加密：...
+- 其他关键依赖：...
+
+**核心流程**（3-5 步，每步一句话）
+1. ...
+2. ...
+3. ...
+
+**安全设计**
+- ...（2-3 条关键安全措施）
+
+**不包含**
+- ...（明确列出本方案不涵盖的功能）
+
+## 方案 B：「简短标签」
+
+（与方案 A 相同格式，但必须是不同的技术路线）
+
+---
+
+重要：
+- 两个方案必须都完整输出，不能只写一个
+- 标签要体现差异（如"轻量级" vs "生产级"，"单体" vs "微服务"）
+- 不写代码，只说方案
+- 每个小节简洁明了，让用户 10 秒内能看懂差异
 
 需求：{requirement}
 {extra_context}"""
@@ -267,6 +294,25 @@ async def plan_node(state: DebateState) -> dict:
         record_agent_call("coder", response.tokens_used, time.monotonic() - start)
         await _notify_budget(budget, "plan", "planner")
         plans_content = response.content
+
+        # Check if both plans were generated — retry if only one
+        import re as _re
+        plan_headers = _re.findall(r"##\s*方案\s*[A-Za-z]", plans_content)
+        if len(plan_headers) < 2:
+            logger.warning("plan_incomplete only=%d plans, retrying", len(plan_headers))
+            retry_msg = [{"role": "user", "content": (
+                f"{prompt}\n\n"
+                "注意：你上次只给出了 1 个方案。请务必给出 2 个完整方案（方案 A 和方案 B），"
+                "两个方案必须都有技术选型、核心流程、安全设计、不包含。"
+            )}]
+            retry_resp = await call_agent(
+                agent="planner", system_prompt=system, messages=retry_msg,
+                model=get_model_for_agent("planner"),
+                max_tokens=await budget.get_max_tokens("coder"),
+            )
+            await budget.record("coder", retry_resp.tokens_used)
+            if _re.findall(r"##\s*方案\s*[A-Za-z]", retry_resp.content).__len__() >= 2:
+                plans_content = retry_resp.content
 
     await _notify({"type": "plan_proposal", "content": plans_content})
 

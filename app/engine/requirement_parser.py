@@ -48,9 +48,25 @@ async def parse_requirement(
     if framework:
         context_parts.append(f"框架：{framework}")
 
-    system_prompt = """你是需求分析专家。分析用户的编码需求，提取功能点、约束条件、隐式需求和边界场景。
-隐式需求是用户没有明确说但生产代码中必须有的（如输入校验、错误处理、安全防护）。
-边界场景是可能导致代码出错的极端输入或状态（如空输入、超长字符串、并发访问）。"""
+    system_prompt = """你是资深需求分析专家。分析用户的编码需求，提取完整的结构化信息。
+
+要求：
+- functional（功能点）：列出用户需求中的每一个功能，至少 3-5 条，越详细越好
+- constraints（约束条件）：用户明确提到的技术限制或要求
+- implicit（隐式需求）：用户没说但生产代码必须有的，至少 5 条，包括：
+  · 输入校验（参数类型、长度、格式）
+  · 错误处理（异常捕获、错误码、友好提示）
+  · 安全防护（注入防护、认证、加密、信息泄露）
+  · 日志记录
+  · 配置管理（硬编码 → 环境变量）
+- edge_cases（边界场景）：至少 5 条，包括：
+  · 空值/None/空字符串
+  · 超长输入
+  · 并发访问/竞态条件
+  · 异常中断/超时
+  · 恶意输入
+
+每一条用简短的一句话描述，让开发者一看就知道要注意什么。"""
 
     messages = [{"role": "user", "content": "\n".join(context_parts)}]
 
@@ -61,7 +77,7 @@ async def parse_requirement(
         tools=[PARSER_TOOL],
         tool_choice={"type": "tool", "name": "submit_analysis"},
         model=settings.haiku_model,
-        max_tokens=1000,
+        max_tokens=2000,
     )
 
     return response.structured or {
