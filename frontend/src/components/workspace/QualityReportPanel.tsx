@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import ReactMarkdown from 'react-markdown';
 import type { QualityReport } from '../../types/debate';
 
 interface Props {
@@ -14,13 +16,12 @@ const STAR_LABELS: Record<number, string> = {
 };
 
 function ScoreBar({ label, value }: { label: string; value: number }) {
-  const color =
-    value >= 80 ? 'bg-green-500' : value >= 60 ? 'bg-yellow-500' : value >= 40 ? 'bg-orange-500' : 'bg-red-500';
+  const hue = Math.round((value / 100) * 120);
   return (
     <div className="flex items-center gap-3">
       <span className="text-xs text-gray-400 w-10">{label}</span>
       <div className="flex-1 bg-gray-100 rounded-full h-2">
-        <div className={`h-2 rounded-full ${color}`} style={{ width: `${value}%` }} />
+        <div className="h-2 rounded-full" style={{ width: `${value}%`, backgroundColor: `hsl(${hue}, 70%, 50%)` }} />
       </div>
       <span className="text-xs text-gray-600 w-10 text-right">{value}%</span>
     </div>
@@ -30,6 +31,11 @@ function ScoreBar({ label, value }: { label: string; value: number }) {
 export default function QualityReportPanel({ report, confidence }: Props) {
   const stars = report.star_rating || Math.round(confidence * 5);
   const starLabel = STAR_LABELS[stars] || '';
+  const [showAllUnresolved, setShowAllUnresolved] = useState(false);
+
+  const unresolvedToShow = showAllUnresolved
+    ? report.unresolved_issues
+    : report.unresolved_issues.slice(0, 3);
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-5 space-y-4">
@@ -63,17 +69,27 @@ export default function QualityReportPanel({ report, confidence }: Props) {
       {/* Unresolved issues */}
       {report.unresolved_issues.length > 0 && (
         <div>
-          <h4 className="text-xs font-medium text-red-600 mb-2">🔴 未完全解决</h4>
+          <h4 className="text-xs font-medium text-red-600 mb-2">
+            🔴 未完全解决（{report.unresolved_issues.length} 条）
+          </h4>
           <div className="space-y-2">
-            {report.unresolved_issues.map((item, i) => (
+            {unresolvedToShow.map((item, i) => (
               <div key={i} className="bg-red-50 border border-red-200 rounded p-2">
-                <p className="text-xs font-medium text-red-700">{item.issue}</p>
-                <p className="text-xs text-gray-500 mt-1">状态：{item.current_status}</p>
-                <p className="text-xs text-gray-500">影响：{item.impact}</p>
-                <p className="text-xs text-blue-600 mt-1">建议：{item.suggestion}</p>
+                <p className="text-xs font-medium text-red-700">{item.issue || '未描述'}</p>
+                <p className="text-xs text-gray-500 mt-1">状态：{item.current_status || '未评估'}</p>
+                <p className="text-xs text-gray-500">影响：{item.impact || '待分析'}</p>
+                <p className="text-xs text-blue-600 mt-1">建议：{item.suggestion || '暂无建议'}</p>
               </div>
             ))}
           </div>
+          {report.unresolved_issues.length > 3 && (
+            <button
+              onClick={() => setShowAllUnresolved(!showAllUnresolved)}
+              className="mt-2 text-xs text-blue-600 hover:text-blue-500"
+            >
+              {showAllUnresolved ? '↑ 收起' : `↓ 查看全部 ${report.unresolved_issues.length} 条`}
+            </button>
+          )}
         </div>
       )}
 
@@ -89,7 +105,9 @@ export default function QualityReportPanel({ report, confidence }: Props) {
       {report.usage_advice && (
         <div className="pt-2 border-t border-gray-200">
           <h4 className="text-xs text-gray-500 mb-1">💡 使用建议</h4>
-          <p className="text-xs text-gray-600 leading-relaxed">{report.usage_advice}</p>
+          <div className="text-xs text-gray-600 leading-relaxed prose prose-xs max-w-none">
+            <ReactMarkdown>{report.usage_advice}</ReactMarkdown>
+          </div>
         </div>
       )}
     </div>

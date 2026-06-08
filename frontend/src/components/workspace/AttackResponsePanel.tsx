@@ -376,15 +376,20 @@ export default function AttackResponsePanel({
                   {coderMsgs.filter((m) => !m.content.startsWith('[方案设计]') && !(m.structured as Record<string, unknown>)?.responses).map((msg, i) => (
                     <CoderCodeCard key={`cc-${round}-${i}`} message={msg} round={round} />
                   ))}
-                  {coderMsgs.filter((m) => !m.content.startsWith('[方案设计]') && !!(m.structured as Record<string, unknown>)?.responses).length > 0 && (
-                    <CoderResponsesSection coderMsgs={coderMsgs.filter((m) => !m.content.startsWith('[方案设计]') && !!(m.structured as Record<string, unknown>)?.responses)} allMessages={messages} currentRound={round} />
-                  )}
-                  {isDebateRound && reviewCode ? (
+                  {isDebateRound && reviewCode ? (() => {
+                    const thisRoundResps: Array<Record<string, string>> = [];
+                    for (const m of coderMsgs) {
+                      const s = m.structured as Record<string, unknown> | undefined;
+                      thisRoundResps.push(...((s?.responses as Array<Record<string, string>>) ?? []));
+                    }
+                    const mergedResps = thisRoundResps.length > 0 ? thisRoundResps : coderResps;
+
+                    return (
                     <AnnotatedCodeReview
                       code={reviewCode}
                       language="python"
                       findings={allFindings}
-                      coderResponses={allFindings.length > 0 ? coderResps.map(r => ({
+                      coderResponses={allFindings.length > 0 ? mergedResps.map(r => ({
                         finding_ref: r.finding_ref ?? '',
                         action: r.action ?? '',
                         explanation: r.explanation ?? '',
@@ -393,7 +398,8 @@ export default function AttackResponsePanel({
                       round={round}
                       coderFixedLines={fixedLines.size > 0 ? fixedLines : undefined}
                     />
-                  ) : attackerMsgs.length > 0 ? (
+                    );
+                  })() : attackerMsgs.length > 0 ? (
                     <div className="space-y-3">
                       <span className="text-xs font-semibold text-red-500">{round <= 1 ? '⚔️ Attacker 并行审查' : '⚔️ Attacker 复查修复'}</span>
                       <ThreadedDebateView attackerMsgs={attackerMsgs} coderMsgs={[]} />

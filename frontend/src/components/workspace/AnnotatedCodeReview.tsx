@@ -95,7 +95,8 @@ export default function AnnotatedCodeReview({
   }, []);
 
   const copyCode = useCallback(() => {
-    navigator.clipboard.writeText(code).then(() => {
+    const normalized = code.replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\"/g, '"');
+    navigator.clipboard.writeText(normalized).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     });
@@ -162,12 +163,26 @@ export default function AnnotatedCodeReview({
     requestAnimationFrame(() => requestAnimationFrame(layout));
   }, [findings, satisfiedEntries, openAnns, fontSize]);
 
-  const codeLines = code.split('\n');
+  const normalizedCode = code.replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\"/g, '"');
+  const codeLines = normalizedCode.split('\n');
 
   const highlightMap = new Map<number, string>();
   for (const f of findings) {
-    if (f.line_start && f.line_end) {
-      for (let i = f.line_start; i <= f.line_end; i++) highlightMap.set(i, f.agent);
+    let start = f.line_start;
+    let end = f.line_end;
+
+    if (!start && f.description) {
+      const lines = normalizedCode.split('\n');
+      const matchIdx = lines.findIndex(line =>
+        f.description.split(/\s+/).some(word => word.length > 5 && line.includes(word))
+      );
+      if (matchIdx >= 0) { start = matchIdx + 1; end = matchIdx + 1; }
+    }
+
+    if (start) {
+      const s = start;
+      const e = end || s;
+      for (let i = s; i <= e; i++) highlightMap.set(i, f.agent);
     }
   }
 

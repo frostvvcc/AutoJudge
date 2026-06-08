@@ -276,6 +276,26 @@ export default function WorkspacePage() {
             {!isReplay && debate.result && (
               <ProcessTransparencyPanel result={debate.result} testResult={debate.testResult} />
             )}
+            {isReplay && replayData && (
+              <ProcessTransparencyPanel
+                result={{
+                  code: replayData.result_code ?? '',
+                  language: replayData.language,
+                  confidence: replayData.confidence,
+                  converged: replayData.converged,
+                  convergence_reason: replayData.convergence_reason ?? '',
+                  metadata: {
+                    process_transparency: (replayData.metrics_json as Record<string, unknown>)?.process_transparency ?? {},
+                    degradation_level: (replayData.metrics_json as Record<string, unknown>)?.degradation_level,
+                  },
+                  debate: { total_rounds: replayData.total_rounds, transcript: [] },
+                  summary: replayData.summary_json as never,
+                  risk_assessment: replayData.risk_json as never,
+                  metrics: viewData.metrics as never,
+                  quality_report: viewData.qualityReport as never,
+                }}
+              />
+            )}
           </div>
         )}
 
