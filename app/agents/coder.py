@@ -34,7 +34,7 @@ class CoderAgent(BaseAgent):
 
         parts = [base]
 
-        if context.parsed_requirement:
+        if context.parsed_requirement and isinstance(context.parsed_requirement, dict):
             req = context.parsed_requirement
             parts.append(
                 f"\n需求分析：\n"
