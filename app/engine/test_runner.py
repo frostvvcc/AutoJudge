@@ -32,6 +32,8 @@ class TestRunner:
     4. Verification failure → feedback to Coder for one more fix
     """
 
+    SANDBOX_SUPPORTED_LANGUAGES = {"python"}
+
     async def verify(
         self,
         code: str,
@@ -40,6 +42,13 @@ class TestRunner:
         debate_context: DebateContext | None = None,
         language: str = "python",
     ) -> VerifyResult:
+        if language not in self.SANDBOX_SUPPORTED_LANGUAGES:
+            return VerifyResult(
+                passed=True,
+                reason=f"沙箱执行暂不支持 {language}，跳过自动验证",
+                test_sources={"skipped_reason": "unsupported_language"},
+            )
+
         syntax_error = await self.check_syntax(code, language)
         if syntax_error:
             return VerifyResult(

@@ -5,10 +5,30 @@ services:
       - "9000:9000"
     env_file:
       - .env
+    environment:
+      - MYSQL_HOST=mysql
     depends_on:
-      - redis
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
     volumes:
       - ./data:/app/data
+
+  mysql:
+    image: mysql:8
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD:-autojudge}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-autojudge}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 
   redis:
     image: redis:7-alpine
@@ -35,4 +55,5 @@ services:
           cpus: "0.5"
 
 volumes:
+  mysql_data:
   redis_data:

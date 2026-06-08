@@ -67,6 +67,27 @@ async def aggregate_metrics():
         logger.warning("aggregate_metrics_failed error=%s", e)
 
 
+@scheduler.scheduled_job("cron", hour=4, id="evict_memory")
+async def evict_memory():
+    """Evict excess records from ChromaDB collections to prevent unbounded growth."""
+    from app.memory.attack_knowledge import AttackKnowledgeBase
+    from app.memory.fix_patterns import FixPatternStore
+    from app.memory.eviction import EvictionManager
+
+    try:
+        attack_kb = AttackKnowledgeBase()
+        if attack_kb._available:
+            await EvictionManager(attack_kb.collection).evict_if_needed()
+
+        fix_store = FixPatternStore()
+        if fix_store._available:
+            await EvictionManager(fix_store.collection).evict_if_needed()
+
+        await attack_kb.check_distribution()
+    except Exception as e:
+        logger.warning("evict_memory_failed error=%s", e)
+
+
 @scheduler.scheduled_job("cron", hour=3, id="cleanup_orphan_sessions")
 async def cleanup_orphan_sessions():
     from app.db.engine import async_session

@@ -34,4 +34,6 @@ async def get_current_user(
     if user is None or not user.is_active:
         raise HTTPException(status_code=401, detail="用户不存在或已禁用")
 
+    request.state.user_id = user.id
+
     return user

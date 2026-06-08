@@ -60,7 +60,11 @@ class GenerateRequest(BaseModel):
     @field_validator("language")
     @classmethod
     def validate_language(cls, v: str) -> str:
-        allowed = {"python", "javascript", "typescript", "java", "go", "rust"}
+        allowed = {
+            "python", "javascript", "typescript", "java", "go", "rust",
+            "c", "cpp", "csharp", "kotlin", "swift", "php", "ruby",
+            "scala", "shell", "sql",
+        }
         if v.lower() not in allowed:
             raise ValueError(
                 f"Unsupported language. Allowed: {', '.join(sorted(allowed))}"

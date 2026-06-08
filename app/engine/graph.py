@@ -119,6 +119,7 @@ class DebateState(TypedDict):
     plan_round: int
     plan_action: str
     config: dict
+    round_summaries: dict
     enable_interrupt: bool
     retry_count: int
     user_decision: str
@@ -158,6 +159,8 @@ def _build_context(state: DebateState) -> tuple[DebateContext, BudgetManager]:
                 structured=msg_dict.get("structured"),
             )
         )
+
+    ctx.round_summaries = dict(state.get("round_summaries", {}))
 
     budget = BudgetManager(state.get("budget_total", 100_000))
     budget.spent = state.get("budget_spent", 0)
@@ -326,6 +329,24 @@ async def coder_node(state: DebateState) -> dict:
         if current:
             prompt += f"\n\n你当前的完整代码如下（在此基础上修改）：\n```\n{current}\n```"
 
+        last_attacker_msgs = [
+            m for m in state.get("messages", [])
+            if m.get("round") == state["round"]
+            and m["agent"] in ("security", "performance", "correctness")
+        ]
+        fix_descriptions = []
+        for m in last_attacker_msgs:
+            s = m.get("structured")
+            if s and isinstance(s, dict):
+                for f in s.get("findings", []):
+                    fix_descriptions.append(f.get("description", ""))
+        if fix_descriptions:
+            fix_patterns = FixPatternStore()
+            for desc in fix_descriptions[:3]:
+                fixes = await fix_patterns.retrieve_fixes(desc, top_k=2)
+                if fixes:
+                    prompt += f"\n\n历史修复参考（{desc[:40]}）：\n" + "\n".join(fixes[:2])
+
     start = time.monotonic()
     set_stream_callback(_make_stream_cb("coder"))
     response = await coder_agent.speak(ctx, prompt, budget)
@@ -470,8 +491,13 @@ async def cross_review_node(state: DebateState) -> dict:
         and m["agent"] in ("security", "performance", "correctness")
     ]
 
-    if len(round_msgs) < 2:
-        return _check_and_return_consensus(state, round_msgs)
+    config = state.get("config", {})
+    if config.get("skip_cross_review") or len(round_msgs) < 2:
+        if current_round > 2:
+            await ctx.compress_early_rounds()
+        result = _check_and_return_consensus(state, round_msgs)
+        result["round_summaries"] = dict(ctx.round_summaries)
+        return result
 
     agents = {
         "security": security_agent,
@@ -528,8 +554,14 @@ async def cross_review_node(state: DebateState) -> dict:
             elif user_input.get("type") == "add_context":
                 updated_state["extra_context"] = user_input.get("content", "")
 
+    if current_round > 2:
+        await ctx.compress_early_rounds()
+        updated_state["round_summaries"] = dict(ctx.round_summaries)
+
     consensus_msgs = round_msgs + new_cross_msgs
-    return _check_and_return_consensus(updated_state, consensus_msgs)
+    result = _check_and_return_consensus(updated_state, consensus_msgs)
+    result["round_summaries"] = dict(ctx.round_summaries)
+    return result
 
 
 def _check_and_return_consensus(
@@ -774,12 +806,23 @@ async def final_fix_node(state: DebateState) -> dict:
         for i, item in enumerate(must_fix_items)
     )
 
+    fix_refs = []
+    fix_pattern_store = FixPatternStore()
+    for item in must_fix_items:
+        desc = item.get("reasoning", "")
+        if desc:
+            fixes = await fix_pattern_store.retrieve_fixes(desc, top_k=2)
+            if fixes:
+                fix_refs.append(f"[{desc[:40]}] 历史修复参考：\n" + "\n".join(fixes[:2]))
+
     fix_prompt = (
         f"仲裁裁决要求你修复以下 {len(must_fix_items)} 个问题。\n"
         f"只修复这些具体问题，不要做其他改动。\n"
         f"提交前请用 run_code_snippet 自测修复后的代码。\n\n"
         f"{fix_list}"
     )
+    if fix_refs:
+        fix_prompt += "\n\n" + "\n\n".join(fix_refs)
 
     STRATEGY_ANGLES = [
         "换一种数据结构或算法来实现同样功能",
@@ -1314,6 +1357,7 @@ async def run_debate_with_graph(
         "budget_by_agent": {},
         "budget_by_phase": {},
         "budget_cache_stats": {"read": 0, "creation": 0},
+        "round_summaries": {},
         "judge_report": {},
         "arbitration_result": {},
         "must_fix_items": [],

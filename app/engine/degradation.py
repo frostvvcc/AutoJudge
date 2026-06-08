@@ -62,18 +62,8 @@ class DegradationManager:
 
     def _get_cache(self) -> ResultCache:
         if self._cache is None:
-            from app.db.redis import get_redis
-            redis_client = get_redis()
-            embedding_client = None
-            try:
-                from openai import AsyncOpenAI
-                embedding_client = AsyncOpenAI()
-            except Exception:
-                pass
-            self._cache = ResultCache(
-                redis_client=redis_client,
-                embedding_client=embedding_client,
-            )
+            from app.engine.result_cache import result_cache
+            self._cache = result_cache
         return self._cache
 
     async def execute_with_degradation(
