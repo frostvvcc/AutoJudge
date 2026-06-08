@@ -558,6 +558,8 @@ async def _attacker_node(
         # --- Post-process findings: assign IDs + fill missing line_start ---
         code_lines = (state.get("current_code") or "").split("\n")
         for i, f in enumerate(structured.get("findings", [])):
+            if not isinstance(f, dict):
+                continue
             f["finding_id"] = f"{agent_name.upper()}-{i + 1:03d}"
 
             if not f.get("line_start") and code_lines:
