@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     embedding_model: str = "text-embedding-3-small"
 
     max_rounds: int = 7
-    max_tokens_per_debate: int = 100_000
+    max_tokens_per_debate: int = 500_000
     budget_reserve: float = 0.15
 
     redis_url: str = "redis://localhost:6379/2"

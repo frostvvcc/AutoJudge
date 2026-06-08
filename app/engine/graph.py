@@ -101,9 +101,15 @@ class DebateState(TypedDict):
     consensus: dict
     skip_list: list[str]
     extra_context: str
+    experience_context: str
+    preference_context: str
+    parsed_requirement: dict
     converged: bool
     budget_spent: Annotated[int, _max_int]
     budget_total: int
+    budget_by_agent: dict
+    budget_by_phase: dict
+    budget_cache_stats: dict
     judge_report: dict
     arbitration_result: dict
     must_fix_items: list[dict]
@@ -138,6 +144,9 @@ def _build_context(state: DebateState) -> tuple[DebateContext, BudgetManager]:
     ctx.current_code = state.get("current_code", "")
     ctx.skip_list = state.get("skip_list", [])
     ctx.extra_context = state.get("extra_context", "")
+    ctx.experience_context = state.get("experience_context", "")
+    ctx.preference_context = state.get("preference_context", "")
+    ctx.parsed_requirement = state.get("parsed_requirement")
 
     for msg_dict in state.get("messages", []):
         ctx.messages.append(
@@ -152,6 +161,9 @@ def _build_context(state: DebateState) -> tuple[DebateContext, BudgetManager]:
 
     budget = BudgetManager(state.get("budget_total", 100_000))
     budget.spent = state.get("budget_spent", 0)
+    budget.by_agent = dict(state.get("budget_by_agent", {}))
+    budget.by_phase = dict(state.get("budget_by_phase", {}))
+    budget.cache_stats = dict(state.get("budget_cache_stats", {"read": 0, "creation": 0}))
 
     return ctx, budget
 
@@ -255,6 +267,9 @@ async def plan_node(state: DebateState) -> dict:
                     "plan_action": "chat",
                     "extra_context": user_input.get("message", ""),
                     "budget_spent": budget.spent,
+                "budget_by_agent": dict(budget.by_agent),
+                "budget_by_phase": dict(budget.by_phase),
+                "budget_cache_stats": dict(budget.cache_stats),
                 }
 
     plan_msg = {
@@ -270,6 +285,9 @@ async def plan_node(state: DebateState) -> dict:
         "plan_action": "done",
         "messages": [plan_msg],
         "budget_spent": budget.spent,
+                "budget_by_agent": dict(budget.by_agent),
+                "budget_by_phase": dict(budget.by_phase),
+                "budget_cache_stats": dict(budget.cache_stats),
     }
 
 
@@ -330,6 +348,9 @@ async def coder_node(state: DebateState) -> dict:
         "current_code": response.code or state.get("current_code", ""),
         "messages": [new_msg],
         "budget_spent": budget.spent,
+                "budget_by_agent": dict(budget.by_agent),
+                "budget_by_phase": dict(budget.by_phase),
+                "budget_cache_stats": dict(budget.cache_stats),
     }
 
 
@@ -382,6 +403,9 @@ async def _attacker_node(
         return {
             "messages": [new_msg],
             "budget_spent": budget.spent,
+                "budget_by_agent": dict(budget.by_agent),
+                "budget_by_phase": dict(budget.by_phase),
+                "budget_cache_stats": dict(budget.cache_stats),
         }
     except Exception as e:
         logger.warning("graph_%s_failed error=%s", agent_name, e)
@@ -863,6 +887,9 @@ async def final_fix_node(state: DebateState) -> dict:
             "current_code": new_code,
             "messages": all_fix_msgs + [refix_msg],
             "budget_spent": budget.spent,
+                "budget_by_agent": dict(budget.by_agent),
+                "budget_by_phase": dict(budget.by_phase),
+                "budget_cache_stats": dict(budget.cache_stats),
             "converged": True,
             "convergence_reason": "仲裁后修复完成（含补修）",
         }
@@ -871,6 +898,9 @@ async def final_fix_node(state: DebateState) -> dict:
         "current_code": new_code,
         "messages": all_fix_msgs,
         "budget_spent": budget.spent,
+                "budget_by_agent": dict(budget.by_agent),
+                "budget_by_phase": dict(budget.by_phase),
+                "budget_cache_stats": dict(budget.cache_stats),
         "converged": True,
         "convergence_reason": "仲裁后修复完成",
     }
@@ -889,6 +919,9 @@ async def judge_node(state: DebateState) -> dict:
     return {
         "judge_report": report,
         "budget_spent": budget.spent,
+                "budget_by_agent": dict(budget.by_agent),
+                "budget_by_phase": dict(budget.by_phase),
+                "budget_cache_stats": dict(budget.cache_stats),
     }
 
 
@@ -1043,6 +1076,9 @@ async def focused_retry_node(state: DebateState) -> dict:
         "current_code": new_code,
         "messages": verify_msgs,
         "budget_spent": budget.spent,
+                "budget_by_agent": dict(budget.by_agent),
+                "budget_by_phase": dict(budget.by_phase),
+                "budget_cache_stats": dict(budget.cache_stats),
         "retry_count": retry_count + 1,
         "judge_report": {},
     }
@@ -1269,9 +1305,15 @@ async def run_debate_with_graph(
         "consensus": {},
         "skip_list": skip_list,
         "extra_context": "",
+        "experience_context": "",
+        "preference_context": "",
+        "parsed_requirement": parsed_req or {},
         "converged": False,
         "budget_spent": 0,
         "budget_total": config.max_tokens,
+        "budget_by_agent": {},
+        "budget_by_phase": {},
+        "budget_cache_stats": {"read": 0, "creation": 0},
         "judge_report": {},
         "arbitration_result": {},
         "must_fix_items": [],
@@ -1292,17 +1334,13 @@ async def run_debate_with_graph(
         "user_decision": "",
     }
 
-    # Inject Memory context into agent instances (via shared context patterns)
-    # The agents read experience_context from DebateContext, which is rebuilt
-    # inside each node via _build_context. We inject it into the extra_context
-    # field so it flows through the graph state.
-    context_parts = []
+    # Inject Memory context into separate state fields so _build_context
+    # restores them into the correct DebateContext attributes (experience_context,
+    # preference_context) that agents read from their get_system_prompt().
     if experience_prompt:
-        context_parts.append(experience_prompt)
+        initial_state["experience_context"] = experience_prompt
     if preference_prompt:
-        context_parts.append(preference_prompt)
-    if context_parts:
-        initial_state["extra_context"] = "\n\n".join(context_parts)
+        initial_state["preference_context"] = preference_prompt
 
     # --- Run the LangGraph graph ---
     mysql_url = (
@@ -1381,17 +1419,35 @@ async def run_debate_with_graph(
             logger.warning("graph_test_runner_error error=%s", e)
 
     # --- Post-processing: Memory write-back ---
+    # Only store findings that Coder explicitly accepted (accept_and_fix).
+    # Rebutted findings must NOT enter the knowledge base.
+    accepted_refs: set[str] = set()
+    for msg in final_state.get("messages", []):
+        if msg["agent"] == "coder":
+            structured = msg.get("structured")
+            if structured and isinstance(structured, dict):
+                for resp in structured.get("responses", []):
+                    if resp.get("action") == "accept_and_fix":
+                        accepted_refs.add(resp.get("finding_ref", ""))
+
     accepted_findings = []
     for msg in final_state.get("messages", []):
         if msg["agent"] in ("security", "performance", "correctness"):
             structured = msg.get("structured")
             if structured and isinstance(structured, dict):
                 for f in structured.get("findings", []):
-                    accepted_findings.append({
-                        **f,
-                        "was_accepted": True,
-                        "attacker": msg["agent"],
-                    })
+                    finding_key = f.get("category", "") or f.get("description", "")
+                    ref_match = any(
+                        finding_key.lower() in ref.lower() or ref.lower() in finding_key.lower()
+                        for ref in accepted_refs if ref
+                    )
+                    if ref_match or (not accepted_refs and f.get("severity") in ("critical", "high")):
+                        accepted_findings.append({
+                            **f,
+                            "was_accepted": True,
+                            "tool_verified": f.get("tool_verified", False),
+                            "attacker": msg["agent"],
+                        })
     if accepted_findings:
         await attack_kb.store_findings(requirement, language, accepted_findings)
 

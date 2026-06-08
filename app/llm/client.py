@@ -354,6 +354,16 @@ async def _call_anthropic_api(
     max_tool_turns = 5
 
     for turn in range(max_tool_turns + 1):
+        is_last_turn = (turn == max_tool_turns)
+        if agent == "coder":
+            effective_choice = (
+                {"type": "tool", "name": "submit_response"}
+                if is_last_turn
+                else {"type": "any"}
+            )
+        else:
+            effective_choice = tool_choice
+
         has_stream_cb = _stream_callback.get(None) is not None
         if has_stream_cb:
             async with client.messages.stream(
@@ -361,7 +371,7 @@ async def _call_anthropic_api(
                 system=system_blocks,
                 messages=conv_messages,
                 tools=cached_tools,
-                tool_choice={"type": "any"} if agent == "coder" else tool_choice,
+                tool_choice=effective_choice,
                 max_tokens=max_tokens,
             ) as stream:
                 async for text in stream.text_stream:
@@ -373,7 +383,7 @@ async def _call_anthropic_api(
                 system=system_blocks,
                 messages=conv_messages,
                 tools=cached_tools,
-                tool_choice={"type": "any"} if agent == "coder" else tool_choice,
+                tool_choice=effective_choice,
                 max_tokens=max_tokens,
             )
 
@@ -565,10 +575,7 @@ async def _call_anthropic_proxy(
             if effective_choice:
                 body["tool_choice"] = effective_choice
 
-            resp = await http.post(url, headers=headers, json=body)
-            if resp.status_code != 200:
-                raise RuntimeError(f"Proxy API error {resp.status_code}: {resp.text[:300]}")
-            data = resp.json()
+            data = await _stream_anthropic_sse(http, url, headers, body)
 
             usage = data.get("usage", {})
             total_tokens += usage.get("input_tokens", 0) + usage.get("output_tokens", 0)

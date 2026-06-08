@@ -164,7 +164,7 @@ async def generate(
             else "claude-sonnet-4-20250514"
         ),
         max_tokens=(
-            body.config.max_tokens if body.config else 100_000
+            body.config.max_tokens if body.config else DebateConfig().max_tokens
         ),
     )
 
@@ -219,7 +219,7 @@ async def generate_async(
             else "claude-sonnet-4-20250514"
         ),
         max_tokens=(
-            body.config.max_tokens if body.config else 100_000
+            body.config.max_tokens if body.config else DebateConfig().max_tokens
         ),
     )
 

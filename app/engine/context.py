@@ -183,6 +183,8 @@ class DebateContext:
             combined = "\n\n".join(
                 f"[{m.agent.upper()}] {m.content}" for m in rounds[round_num]
             )
+            if messages and messages[-1]["role"] == "user":
+                messages.append({"role": "assistant", "content": "继续审阅下一轮。"})
             messages.append({"role": "user", "content": combined})
 
         if not messages:
