@@ -68,7 +68,7 @@ const AGENT_ICONS: Record<string, string> = {
 };
 
 function matchResponseToFinding(
-  finding: Finding, fIdx: number, agentFindingIdx: number,
+  finding: Finding, _fIdx: number, agentFindingIdx: number,
   responses: CoderResponse[],
 ): CoderResponse | null {
   // Layer 1: exact AGENT-NNN format
@@ -76,19 +76,19 @@ function matchResponseToFinding(
   const exact = responses.find(r => (r.finding_ref ?? '').toUpperCase() === ref);
   if (exact) return exact;
 
-  // Layer 2: fuzzy — finding_ref contains agent name + category keyword
+  // Layer 2: strict fuzzy — finding_ref must contain BOTH agent name AND category keyword
   const agentLower = finding.agent.toLowerCase();
   const catLower = (finding.category || '').toLowerCase().replace(/[_\s]+/g, '');
-  const fuzzy = responses.find(r => {
-    const rRef = (r.finding_ref || '').toLowerCase().replace(/[_\s]+/g, '');
-    return rRef.includes(agentLower) && catLower && (rRef.includes(catLower) || catLower.includes(rRef.replace(agentLower, '').replace(/[-_]/g, '')));
-  });
-  if (fuzzy) return fuzzy;
+  if (catLower.length >= 3) {
+    const fuzzy = responses.find(r => {
+      const rRef = (r.finding_ref || '').toLowerCase().replace(/[_\s]+/g, '');
+      return rRef.includes(agentLower) && rRef.includes(catLower);
+    });
+    if (fuzzy) return fuzzy;
+  }
 
-  // Layer 3: positional — Nth response for this agent matches Nth finding for this agent
-  const agentResps = responses.filter(r => (r.finding_ref || '').toLowerCase().includes(agentLower));
-  if (agentResps[agentFindingIdx]) return agentResps[agentFindingIdx];
-
+  // No Layer 3 positional matching — too error-prone with multi-finding agents.
+  // Better to show no response than a wrong response.
   return null;
 }
 

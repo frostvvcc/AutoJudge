@@ -167,11 +167,21 @@ export default function AttackResponsePanel({
               {isExpanded && (() => {
                 const coderMsgsThisRound = (groupedByRound[round] ?? []).filter(m => m.agent === 'coder');
                 const coderMsgsPrevRound = (groupedByRound[round - 1] ?? []).filter(m => m.agent === 'coder');
-                const reviewCode = coderMsgsThisRound.find(m => m.code)?.code
+                let reviewCode = coderMsgsThisRound.find(m => m.code)?.code
                   ?? coderMsgsPrevRound.find(m => m.code)?.code ?? '';
 
+                // Bug#4: code version regression guard
+                const prevRoundCode = coderMsgsPrevRound.find(m => m.code)?.code ?? '';
+                if (prevRoundCode && reviewCode && reviewCode.length < prevRoundCode.length * 0.2) {
+                  reviewCode = prevRoundCode;
+                }
+
+                // Collect findings from both regular attacks and cross-review messages
+                const allAttackerAndCrossMsgs = msgs.filter(m =>
+                  ['security', 'performance', 'correctness'].includes(m.agent)
+                );
                 const allFindings: Array<{ agent: string; category: string; severity: string; description: string; test_input?: string; line_start?: number; line_end?: number }> = [];
-                for (const m of attackerMsgs) {
+                for (const m of allAttackerAndCrossMsgs) {
                   const s = m.structured as Record<string, unknown> | undefined;
                   const findings = (s?.findings as Array<Record<string, unknown>>) ?? [];
                   for (const f of findings) {
@@ -224,9 +234,17 @@ export default function AttackResponsePanel({
                 }
                 const roundAllSatisfied = satisfiedEntries.length > 0 && allFindings.length === 0;
 
+                // Smart layout: if code is very short but findings are many with no line refs,
+                // this is a design/plan review, not a code review — use text list instead of annotation layout
+                const codeLineCount = reviewCode.replace(/\\n/g, '\n').split('\n').length;
+                const allLineMissing = allFindings.length > 0 && allFindings.every(f => !f.line_start || f.line_start <= 1);
+                const isPlanReview = codeLineCount < 20 && allFindings.length > codeLineCount && allLineMissing;
+
                 return (
                   <div className="border-t border-gray-100 pt-3">
-                    {reviewCode ? (
+                    {isPlanReview ? (
+                      <ThreadedDebateView attackerMsgs={attackerMsgs} nextRoundResponses={hasFindings ? coderResps : undefined} isLastRound={isLast && coderResps.length === 0} />
+                    ) : reviewCode ? (
                       <AnnotatedCodeReview
                         code={reviewCode}
                         language="python"
@@ -326,15 +344,23 @@ export default function AttackResponsePanel({
               )}
             </button>
             {isExpanded && (() => {
-              const reviewCode = isDebateRound
+              let reviewCode = isDebateRound
                 ? (coderMsgs.find(m => m.code)?.code
                   ?? (groupedByRound[round - 1] ?? []).find(m => m.agent === 'coder' && m.code)?.code
                   ?? '')
                 : '';
 
+              // Bug#4: code version regression guard
+              const prevRoundCode2 = (groupedByRound[round - 1] ?? []).find(m => m.agent === 'coder' && m.code)?.code ?? '';
+              if (prevRoundCode2 && reviewCode && reviewCode.length < prevRoundCode2.length * 0.2) {
+                reviewCode = prevRoundCode2;
+              }
+
+              // Collect findings from all attacker messages including cross-review
+              const allAttackerMsgs2 = msgs.filter(m => ['security', 'performance', 'correctness'].includes(m.agent));
               const allFindings: Array<{ agent: string; category: string; severity: string; description: string; test_input?: string; line_start?: number; line_end?: number }> = [];
               if (isDebateRound) {
-                for (const m of attackerMsgs) {
+                for (const m of allAttackerMsgs2) {
                   const s = m.structured as Record<string, unknown> | undefined;
                   for (const f of ((s?.findings as Array<Record<string, unknown>>) ?? [])) {
                     allFindings.push({
@@ -378,7 +404,21 @@ export default function AttackResponsePanel({
                   {coderMsgs.filter((m) => !m.content.startsWith('[方案设计]') && !(m.structured as Record<string, unknown>)?.responses).map((msg, i) => (
                     <CoderCodeCard key={`cc-${round}-${i}`} message={msg} round={round} />
                   ))}
+                  {(() => {
+                    const codeLC = reviewCode.replace(/\\n/g, '\n').split('\n').length;
+                    const allLM = allFindings.length > 0 && allFindings.every(f => !f.line_start || f.line_start <= 1);
+                    const planReview = codeLC < 20 && allFindings.length > codeLC && allLM;
+                    if (planReview && isDebateRound) {
+                      return <ThreadedDebateView attackerMsgs={attackerMsgs} coderMsgs={[]} />;
+                    }
+                    return null;
+                  })()}
                   {isDebateRound && reviewCode ? (() => {
+                    const codeLC2 = reviewCode.replace(/\\n/g, '\n').split('\n').length;
+                    const allLM2 = allFindings.length > 0 && allFindings.every(f => !f.line_start || f.line_start <= 1);
+                    const planReview2 = codeLC2 < 20 && allFindings.length > codeLC2 && allLM2;
+                    if (planReview2) return null;
+
                     const thisRoundResps: Array<Record<string, string>> = [];
                     for (const m of coderMsgs) {
                       const s = m.structured as Record<string, unknown> | undefined;
@@ -813,9 +853,9 @@ function CrossReviewCard({ messages }: { messages: DebateMessage[] }) {
               <div className={`w-1.5 h-1.5 rounded-full mt-1.5 shrink-0 ${AGENT_DOTS[msg.agent] ?? 'bg-gray-500'}`} />
               <div>
                 <span className="text-xs font-medium text-purple-600">{AGENT_LABELS[msg.agent]}</span>
-                <p className="text-xs text-gray-600 mt-0.5 leading-relaxed">
-                  {msg.content.replace('[交叉审阅] ', '')}
-                </p>
+                <div className="text-xs text-gray-600 mt-0.5 leading-relaxed prose prose-xs max-w-none">
+                  <ReactMarkdown>{msg.content.replace('[交叉审阅] ', '')}</ReactMarkdown>
+                </div>
               </div>
             </div>
           ))}
