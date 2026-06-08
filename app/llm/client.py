@@ -569,7 +569,7 @@ async def _call_anthropic_proxy(
     total_cache_creation = 0
     max_tool_turns = 3 if agent == "coder" else 0
 
-    async with httpx.AsyncClient(timeout=600) as http:
+    async with httpx.AsyncClient(timeout=120) as http:
         for turn in range(max_tool_turns + 1):
             body["messages"] = conv_messages
             is_last_turn = (turn == max_tool_turns)
