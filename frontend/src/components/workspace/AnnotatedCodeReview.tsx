@@ -67,9 +67,29 @@ const AGENT_ICONS: Record<string, string> = {
   correctness: '✔',
 };
 
-function matchResponseToFinding(finding: Finding, fIdx: number, responses: CoderResponse[]): CoderResponse | null {
-  const ref = `${finding.agent.toUpperCase()}-${String(fIdx + 1).padStart(3, '0')}`;
-  return responses.find(r => (r.finding_ref ?? '').toUpperCase() === ref) ?? null;
+function matchResponseToFinding(
+  finding: Finding, fIdx: number, agentFindingIdx: number,
+  responses: CoderResponse[],
+): CoderResponse | null {
+  // Layer 1: exact AGENT-NNN format
+  const ref = `${finding.agent.toUpperCase()}-${String(agentFindingIdx + 1).padStart(3, '0')}`;
+  const exact = responses.find(r => (r.finding_ref ?? '').toUpperCase() === ref);
+  if (exact) return exact;
+
+  // Layer 2: fuzzy — finding_ref contains agent name + category keyword
+  const agentLower = finding.agent.toLowerCase();
+  const catLower = (finding.category || '').toLowerCase().replace(/[_\s]+/g, '');
+  const fuzzy = responses.find(r => {
+    const rRef = (r.finding_ref || '').toLowerCase().replace(/[_\s]+/g, '');
+    return rRef.includes(agentLower) && catLower && (rRef.includes(catLower) || catLower.includes(rRef.replace(agentLower, '').replace(/[-_]/g, '')));
+  });
+  if (fuzzy) return fuzzy;
+
+  // Layer 3: positional — Nth response for this agent matches Nth finding for this agent
+  const agentResps = responses.filter(r => (r.finding_ref || '').toLowerCase().includes(agentLower));
+  if (agentResps[agentFindingIdx]) return agentResps[agentFindingIdx];
+
+  return null;
 }
 
 export default function AnnotatedCodeReview({
@@ -166,20 +186,27 @@ export default function AnnotatedCodeReview({
   const normalizedCode = code.replace(/\\n/g, '\n').replace(/\\t/g, '\t').replace(/\\"/g, '"');
   const codeLines = normalizedCode.split('\n');
 
+  const allLineStartsWeak = findings.length > 1 && findings.every(f => !f.line_start || f.line_start <= 1);
+
   const highlightMap = new Map<number, string>();
   for (const f of findings) {
     let start = f.line_start;
     let end = f.line_end;
 
-    if (!start && f.description) {
-      const lines = normalizedCode.split('\n');
-      const matchIdx = lines.findIndex(line =>
-        f.description.split(/\s+/).some(word => word.length > 5 && line.includes(word))
-      );
-      if (matchIdx >= 0) { start = matchIdx + 1; end = matchIdx + 1; }
+    const needsFallback = !start || (allLineStartsWeak && start <= 1);
+    if (needsFallback && f.description && codeLines.length > 1) {
+      const keywords = f.description.split(/[\s,;.()]+/).filter(w => w.length > 4);
+      for (let li = 0; li < codeLines.length; li++) {
+        const lineLower = codeLines[li].toLowerCase();
+        if (keywords.some(kw => lineLower.includes(kw.toLowerCase()))) {
+          start = li + 1;
+          end = li + 1;
+          break;
+        }
+      }
     }
 
-    if (start) {
+    if (start && start > 0) {
       const s = start;
       const e = end || s;
       for (let i = s; i <= e; i++) highlightMap.set(i, f.agent);
@@ -240,11 +267,15 @@ export default function AnnotatedCodeReview({
           )}
 
           {/* Normal findings (Round 1 style) */}
-          {findings.map((f, idx) => {
+          {(() => {
+            const agentCounters: Record<string, number> = {};
+            return findings.map((f, idx) => {
+            const agentIdx = agentCounters[f.agent] ?? 0;
+            agentCounters[f.agent] = agentIdx + 1;
             const borderColor = AGENT_BORDER_COLORS[f.agent] ?? 'border-gray-200';
             const textColor = AGENT_TEXT_COLORS[f.agent] ?? 'text-gray-700';
             const isOpen = openAnns.has(idx);
-            const resp = matchResponseToFinding(f, idx, coderResponses);
+            const resp = matchResponseToFinding(f, idx, agentIdx, coderResponses);
             const icon = AGENT_ICONS[f.agent] ?? '•';
 
             return (
@@ -297,7 +328,8 @@ export default function AnnotatedCodeReview({
                 )}
               </div>
             );
-          })}
+          });
+          })()}
 
           {/* Satisfied entries (Round 2 style — green, no expand) */}
           {satisfiedEntries?.map((s, idx) => {

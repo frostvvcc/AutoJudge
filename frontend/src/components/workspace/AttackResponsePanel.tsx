@@ -199,6 +199,7 @@ export default function AttackResponsePanel({
                       fixedLines.add(i + 1);
                     }
                   }
+                  if (fixedLines.size > currLines.length * 0.8) fixedLines.clear();
                 }
 
                 // Build satisfied entries with anchor lines from previous round's findings
@@ -366,6 +367,7 @@ export default function AttackResponsePanel({
                 for (let i = 0; i < currLines.length; i++) {
                   if (i >= prevLines.length || currLines[i] !== prevLines[i]) fixedLines.add(i + 1);
                 }
+                if (fixedLines.size > currLines.length * 0.8) fixedLines.clear();
               }
 
               return (
