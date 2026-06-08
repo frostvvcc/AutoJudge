@@ -186,4 +186,10 @@ class JudgeAgent:
         await budget.record("judge", response.tokens_used)
         budget.record_latency(response.latency_ms)
 
+        logger.info("judge_summarize_result structured_type=%s structured_keys=%s content_len=%d code_len=%d",
+                     type(response.structured).__name__ if response.structured else "None",
+                     list(response.structured.keys()) if isinstance(response.structured, dict) and response.structured else "empty",
+                     len(response.content or ""),
+                     len(response.code or ""))
+
         return response.structured or {}
