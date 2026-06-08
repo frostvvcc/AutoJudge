@@ -39,6 +39,10 @@ def _max_int(left: int, right: int) -> int:
 
 def _merge_dicts(left: dict, right: dict) -> dict:
     """Reducer: merge dicts from parallel nodes (right overwrites left on conflict)."""
+    if not isinstance(left, dict):
+        left = {} if not left else (json.loads(left) if isinstance(left, str) else {})
+    if not isinstance(right, dict):
+        right = {} if not right else (json.loads(right) if isinstance(right, str) else {})
     merged = dict(left)
     for k, v in right.items():
         if k in merged and isinstance(merged[k], (int, float)) and isinstance(v, (int, float)):
@@ -189,9 +193,12 @@ def _build_context(state: DebateState) -> tuple[DebateContext, BudgetManager]:
 
     budget = BudgetManager(state.get("budget_total", 100_000))
     budget.spent = state.get("budget_spent", 0)
-    budget.by_agent = dict(state.get("budget_by_agent", {}))
-    budget.by_phase = dict(state.get("budget_by_phase", {}))
-    budget.cache_stats = dict(state.get("budget_cache_stats", {"read": 0, "creation": 0}))
+    raw_by_agent = state.get("budget_by_agent", {})
+    budget.by_agent = dict(raw_by_agent) if isinstance(raw_by_agent, dict) else {}
+    raw_by_phase = state.get("budget_by_phase", {})
+    budget.by_phase = dict(raw_by_phase) if isinstance(raw_by_phase, dict) else {}
+    raw_cache = state.get("budget_cache_stats", {"read": 0, "creation": 0})
+    budget.cache_stats = dict(raw_cache) if isinstance(raw_cache, dict) else {"read": 0, "creation": 0}
 
     return ctx, budget
 
@@ -534,14 +541,19 @@ async def _attacker_node(
         structured = response.structured
         if not structured or not isinstance(structured, dict):
             content_lower = response.content.lower()
-            has_pass = any(kw in content_lower for kw in ["✅", "通过", "satisfied", "无问题", "没有新问题"])
+            has_attack_content = any(kw in content_lower for kw in [
+                "漏洞", "bug", "错误", "问题", "风险", "注入", "泄露", "溢出", "越界",
+                "vulnerability", "injection", "error", "issue", "risk", "leak", "overflow",
+                "sql", "xss", "csrf", "o(n²)", "o(n^2)", "内存", "死锁", "竞态",
+            ])
+            inferred = "attacking" if has_attack_content else "satisfied"
             structured = {
-                "stance": "satisfied" if has_pass else "attacking",
+                "stance": inferred,
                 "message": response.content,
                 "findings": [],
             }
-            logger.warning("attacker_%s_no_structured round=%d, inferred stance=%s",
-                           agent_name, state["round"], structured["stance"])
+            logger.warning("attacker_%s_no_structured round=%d, inferred stance=%s (attack_keywords=%s)",
+                           agent_name, state["round"], inferred, has_attack_content)
 
         # --- Post-process findings: assign IDs + fill missing line_start ---
         code_lines = (state.get("current_code") or "").split("\n")
@@ -573,7 +585,7 @@ async def _attacker_node(
                 "budget_cache_stats": dict(budget.cache_stats),
         }
     except Exception as e:
-        logger.warning("graph_%s_failed error=%s", agent_name, e)
+        logger.warning("graph_%s_failed error=%s", agent_name, e, exc_info=True)
         set_stream_callback(None)
         await _notify({"type": "stream_end", "agent": agent_name})
 
