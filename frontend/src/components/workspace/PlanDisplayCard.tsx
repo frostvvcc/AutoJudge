@@ -188,11 +188,16 @@ export default function PlanDisplayCard({ content, selectable, selectedIndex, on
                   <div>
                     <h4 className="text-xs font-semibold text-gray-500 mb-2">技术选型</h4>
                     <div className="flex flex-wrap gap-1.5">
-                      {plan.techStack.map((tech, j) => (
-                        <span key={j} className={`text-xs px-2 py-1 rounded-full ${theme.badge} font-medium`}>
-                          {tech.split('：')[0]}
-                        </span>
-                      ))}
+                      {plan.techStack.map((tech, j) => {
+                        const parts = tech.split(/[：:]/);
+                        const category = parts[0]?.trim();
+                        const value = parts.slice(1).join(':').trim();
+                        return (
+                          <span key={j} className={`text-xs px-2 py-1 rounded-full ${theme.badge} font-medium`}>
+                            {category}{value ? `：${value}` : ''}
+                          </span>
+                        );
+                      })}
                     </div>
                   </div>
                 )}
