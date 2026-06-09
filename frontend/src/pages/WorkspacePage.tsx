@@ -225,6 +225,7 @@ export default function WorkspacePage() {
             agentStreams={debate.agentStreams}
             activeAgents={debate.activeAgents}
             currentPhase={debate.currentPhase}
+            agentProgress={debate.agentProgress}
           />
         )}
 

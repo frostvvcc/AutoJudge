@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 
 from app.engine.context import DebateContext
 from app.config import settings
+from app.llm.model_router import get_model_for_agent
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +136,7 @@ class TestRunner:
                 }
             ],
             tool_choice={"type": "tool", "name": "submit_tests"},
-            model=settings.haiku_model,
+            model=get_model_for_agent("test_generator"),
             max_tokens=2000,
         )
 

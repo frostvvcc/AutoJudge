@@ -1,95 +1,150 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useState } from 'react';
 import { AGENT_DOTS, AGENT_LABELS } from '../../types/debate';
+import type { AgentProgressInfo } from '../../contexts/DebateContext';
 
 interface Props {
   agentStreams: Record<string, string>;
   activeAgents: Set<string>;
   currentPhase: string;
+  agentProgress: Record<string, AgentProgressInfo>;
 }
 
 const DEBATE_AGENTS = ['security', 'performance', 'correctness'] as const;
 const ALL_AGENTS = ['coder', 'security', 'performance', 'correctness', 'arbitrator', 'judge'] as const;
 
-const AGENT_DESCRIPTIONS: Record<string, string> = {
-  coder: '编写代码 / 回应攻击',
-  security: '审查安全漏洞',
-  performance: '审查性能问题',
-  correctness: '审查逻辑正确性',
-  arbitrator: '仲裁未解决争议',
-  judge: '生成质量报告',
-};
+function getPhaseDescription(agent: string, phase: string): string {
+  if (agent === 'coder') {
+    if (phase === 'plan') return '设计方案中';
+    if (phase === 'coding') return '编写初版代码';
+    if (phase === 'debate') return '回应攻击 / 修复代码';
+    if (phase === 'fixing') return '修复仲裁要求';
+    return '编写代码';
+  }
+  const map: Record<string, string> = {
+    security: '审查安全漏洞',
+    performance: '审查性能问题',
+    correctness: '审查逻辑正确性',
+    arbitrator: '仲裁未解决争议',
+    judge: '生成质量报告',
+  };
+  return map[agent] ?? '';
+}
 
-function StreamSlot({
+function ElapsedTimer({ startedAt }: { startedAt: number }) {
+  const [elapsed, setElapsed] = useState(0);
+  useEffect(() => {
+    const iv = setInterval(() => setElapsed(Math.floor((Date.now() - startedAt) / 1000)), 1000);
+    return () => clearInterval(iv);
+  }, [startedAt]);
+  return <span className="tabular-nums">{elapsed}s</span>;
+}
+
+function ProgressBar({ startedAt, estimatedSeconds }: { startedAt: number; estimatedSeconds: number }) {
+  const [pct, setPct] = useState(0);
+  useEffect(() => {
+    const iv = setInterval(() => {
+      const elapsed = (Date.now() - startedAt) / 1000;
+      setPct(Math.min(95, (elapsed / estimatedSeconds) * 100));
+    }, 500);
+    return () => clearInterval(iv);
+  }, [startedAt, estimatedSeconds]);
+  return (
+    <div className="w-full h-1 bg-gray-100 rounded-full overflow-hidden">
+      <div
+        className="h-full bg-blue-400 rounded-full transition-all duration-500 ease-out"
+        style={{ width: `${pct}%` }}
+      />
+    </div>
+  );
+}
+
+function DoneChip({ progress }: { progress: AgentProgressInfo }) {
+  const secs = progress.elapsedSeconds ?? 0;
+  if (progress.stance) {
+    const isSatisfied = progress.stance === 'satisfied';
+    const count = progress.findingsCount ?? 0;
+    return (
+      <div className="flex items-center gap-1.5">
+        <span className={`text-[10px] font-medium ${isSatisfied ? 'text-green-600' : 'text-orange-600'}`}>
+          {isSatisfied ? '✓ 通过' : `${count} 个问题`}
+        </span>
+        <span className="text-[10px] text-gray-400">{secs}s</span>
+      </div>
+    );
+  }
+  if (progress.hasCode !== undefined) {
+    return (
+      <div className="flex items-center gap-1.5">
+        <span className="text-[10px] font-medium text-blue-600">
+          {progress.hasCode ? `✓ ${progress.codeLines} 行代码` : '⚠ 未产出代码'}
+        </span>
+        <span className="text-[10px] text-gray-400">{secs}s</span>
+      </div>
+    );
+  }
+  return <span className="text-[10px] text-gray-400">✓ {secs}s</span>;
+}
+
+function AgentSlot({
   agent,
-  text,
   isActive,
+  progress,
+  phase,
   compact,
 }: {
   agent: string;
-  text: string;
   isActive: boolean;
+  progress?: AgentProgressInfo;
+  phase: string;
   compact?: boolean;
 }) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [text]);
-
   const dotClass = AGENT_DOTS[agent] ?? 'bg-gray-400';
   const label = AGENT_LABELS[agent] ?? agent;
-  const desc = AGENT_DESCRIPTIONS[agent] ?? '';
+  const desc = getPhaseDescription(agent, phase);
+  const isDone = progress?.status === 'done';
 
-  if (!isActive && !text) return null;
+  if (!isActive && !isDone) {
+    return (
+      <div className={`rounded-lg border border-dashed border-gray-200 bg-gray-50/50 ${compact ? 'p-2.5' : 'p-3'}`}>
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-gray-200" />
+          <span className="text-xs text-gray-300">{label}</span>
+          <span className="text-[10px] text-gray-300 ml-auto">等待中</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div
-      className={`rounded-lg border transition-all duration-300 ${
-        isActive
-          ? 'border-gray-300 bg-white shadow-sm'
-          : 'border-gray-100 bg-gray-50 opacity-60'
-      } ${compact ? 'p-2.5' : 'p-3'}`}
-    >
-      {/* Header */}
-      <div className="flex items-center gap-2 mb-1.5">
-        <div
-          className={`w-2 h-2 rounded-full transition-all ${
-            isActive ? `${dotClass} animate-pulse` : 'bg-gray-300'
-          }`}
-        />
-        <span className={`text-xs font-semibold ${isActive ? 'text-gray-800' : 'text-gray-400'}`}>
+    <div className={`rounded-lg border transition-all duration-300 ${
+      isDone
+        ? 'border-green-200 bg-green-50/50'
+        : 'border-blue-200 bg-white shadow-sm'
+    } ${compact ? 'p-2.5' : 'p-3'}`}>
+      <div className="flex items-center gap-2">
+        <div className={`w-2 h-2 rounded-full transition-all ${
+          isDone ? 'bg-green-400' : `${dotClass} animate-pulse`
+        }`} />
+        <span className={`text-xs font-semibold ${isDone ? 'text-green-700' : 'text-gray-800'}`}>
           {label}
         </span>
-        {isActive && (
-          <span className="text-[10px] text-gray-400">{desc}</span>
-        )}
-        {isActive && !text && (
-          <div className="ml-auto flex items-center gap-1">
-            <span className="text-[10px] text-gray-400">思考中</span>
-            <div className="flex gap-0.5">
-              <div className="w-1 h-1 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '0ms' }} />
-              <div className="w-1 h-1 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '150ms' }} />
-              <div className="w-1 h-1 rounded-full bg-gray-400 animate-bounce" style={{ animationDelay: '300ms' }} />
+        <span className="text-[10px] text-gray-400">{desc}</span>
+        <div className="ml-auto">
+          {isDone && progress ? (
+            <DoneChip progress={progress} />
+          ) : progress ? (
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] text-blue-500">
+                <ElapsedTimer startedAt={progress.startedAt} />
+              </span>
+              <span className="text-[10px] text-gray-300">/ ~{progress.estimatedSeconds}s</span>
             </div>
-          </div>
-        )}
+          ) : null}
+        </div>
       </div>
-
-      {/* Stream content */}
-      {(text || isActive) && (
-        <div
-          ref={scrollRef}
-          className={`text-xs text-gray-600 leading-relaxed whitespace-pre-wrap overflow-y-auto font-mono ${
-            compact ? 'max-h-[120px]' : 'max-h-[180px]'
-          }`}
-        >
-          {text || (
-            <span className="text-gray-300 italic">等待输出...</span>
-          )}
-          {isActive && text && (
-            <span className="inline-block w-1.5 h-3.5 bg-blue-500 animate-pulse ml-0.5 align-middle" />
-          )}
+      {isActive && progress && !isDone && (
+        <div className="mt-2">
+          <ProgressBar startedAt={progress.startedAt} estimatedSeconds={progress.estimatedSeconds} />
         </div>
       )}
     </div>
@@ -100,66 +155,60 @@ export default function AgentLivePanel({
   agentStreams,
   activeAgents,
   currentPhase,
+  agentProgress,
 }: Props) {
   const hasAnyActive = activeAgents.size > 0;
-  if (!hasAnyActive && Object.keys(agentStreams).length === 0) return null;
+  const hasAnyProgress = Object.keys(agentProgress).length > 0;
+  if (!hasAnyActive && !hasAnyProgress && Object.keys(agentStreams).length === 0) return null;
 
   const isDebate = currentPhase === 'debate';
-  const debateActive = DEBATE_AGENTS.some((a) => activeAgents.has(a) || agentStreams[a]);
+  const debateActive = DEBATE_AGENTS.some((a) => activeAgents.has(a) || agentProgress[a]);
   const singleAgent = !isDebate || !debateActive;
 
   if (singleAgent) {
-    const activeAgent = ALL_AGENTS.find((a) => activeAgents.has(a) || agentStreams[a]);
+    const activeAgent = ALL_AGENTS.find((a) => activeAgents.has(a) || agentProgress[a]?.status === 'working');
     if (!activeAgent) return null;
     return (
-      <StreamSlot
+      <AgentSlot
         agent={activeAgent}
-        text={agentStreams[activeAgent] ?? ''}
         isActive={activeAgents.has(activeAgent)}
+        progress={agentProgress[activeAgent]}
+        phase={currentPhase}
       />
     );
   }
 
+  const doneCount = DEBATE_AGENTS.filter((a) => agentProgress[a]?.status === 'done').length;
+  const workingCount = DEBATE_AGENTS.filter((a) => activeAgents.has(a)).length;
+
   return (
     <div className="space-y-1.5">
       <div className="flex items-center gap-2 px-1">
-        <span className="text-xs font-medium text-gray-500">Agent 实时输出</span>
+        <span className="text-xs font-medium text-gray-500">Agent 审查进度</span>
         <span className="text-[10px] text-gray-400">
-          {activeAgents.size} 个 Agent 并行工作中
+          {doneCount > 0 && `${doneCount}/3 完成`}
+          {doneCount > 0 && workingCount > 0 && ' · '}
+          {workingCount > 0 && `${workingCount} 个进行中`}
         </span>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
-        {DEBATE_AGENTS.map((agent) => {
-          const isActive = activeAgents.has(agent);
-          const text = agentStreams[agent] ?? '';
-          if (!isActive && !text) {
-            return (
-              <div key={agent} className="rounded-lg border border-dashed border-gray-200 bg-gray-50/50 p-2.5">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-gray-200" />
-                  <span className="text-xs text-gray-300">{AGENT_LABELS[agent]}</span>
-                  <span className="text-[10px] text-gray-300 ml-auto">等待中</span>
-                </div>
-              </div>
-            );
-          }
-          return (
-            <StreamSlot
-              key={agent}
-              agent={agent}
-              text={text}
-              isActive={isActive}
-              compact
-            />
-          );
-        })}
+        {DEBATE_AGENTS.map((agent) => (
+          <AgentSlot
+            key={agent}
+            agent={agent}
+            isActive={activeAgents.has(agent)}
+            progress={agentProgress[agent]}
+            phase={currentPhase}
+            compact
+          />
+        ))}
       </div>
-      {/* Coder stream if active during debate */}
-      {(activeAgents.has('coder') || agentStreams['coder']) && (
-        <StreamSlot
+      {(activeAgents.has('coder') || agentProgress['coder']?.status === 'working') && (
+        <AgentSlot
           agent="coder"
-          text={agentStreams['coder'] ?? ''}
           isActive={activeAgents.has('coder')}
+          progress={agentProgress['coder']}
+          phase={currentPhase}
         />
       )}
     </div>
