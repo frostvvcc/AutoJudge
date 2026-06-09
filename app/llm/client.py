@@ -490,7 +490,29 @@ async def _stream_anthropic_sse(http, url: str, headers: dict, body: dict) -> di
                         try:
                             current_block["input"] = json.loads(raw)
                         except json.JSONDecodeError:
-                            current_block["input"] = {}
+                            # Proxy SSE sometimes duplicates input_json_delta,
+                            # producing "{ valid1 }{ valid2 }" or a truncated
+                            # first copy followed by a complete second copy.
+                            # Try raw_decode (handles complete+complete), then
+                            # scan for the last complete JSON object.
+                            parsed = None
+                            try:
+                                parsed, _ = json.JSONDecoder().raw_decode(raw)
+                            except (json.JSONDecodeError, ValueError):
+                                for i in range(1, len(raw)):
+                                    if raw[i] == '{':
+                                        try:
+                                            parsed = json.loads(raw[i:])
+                                            break
+                                        except (json.JSONDecodeError, ValueError):
+                                            continue
+                            if isinstance(parsed, dict) and parsed:
+                                current_block["input"] = parsed
+                                logger.info("sse_duplicate_json_recovered keys=%s",
+                                            list(parsed.keys()))
+                            else:
+                                current_block["input"] = {}
+                                logger.warning("sse_json_parse_failed raw_len=%d", len(raw))
                     content_blocks.append(current_block)
                     current_block = None
 
