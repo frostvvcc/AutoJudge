@@ -480,6 +480,31 @@ async def coder_node(state: DebateState) -> dict:
                         ctx.round, len(prev_code), len(new_code))
         new_code = prev_code
 
+    # Syntax validation: if code has SyntaxError, ask Coder to fix indentation
+    if new_code and len(new_code) > 50:
+        try:
+            compile(new_code, "<coder_output>", "exec")
+        except SyntaxError as syn_err:
+            logger.warning("coder_code_syntax_error round=%d line=%s: %s",
+                           ctx.round, syn_err.lineno, syn_err.msg)
+            if budget.remaining() > 5000:
+                fix_indent_prompt = (
+                    f"你提交的代码有语法错误（第 {syn_err.lineno} 行：{syn_err.msg}）。\n"
+                    "最常见的原因是 Python 缩进不正确——if/for/def/class 后面的代码块必须缩进 4 个空格。\n"
+                    "请修复缩进后重新提交完整代码。"
+                )
+                set_stream_callback(_make_stream_cb("coder"))
+                fix_resp = await coder_agent.speak(ctx, fix_indent_prompt, budget)
+                set_stream_callback(None)
+                if fix_resp.code:
+                    try:
+                        compile(fix_resp.code, "<coder_fix>", "exec")
+                        new_code = fix_resp.code
+                        logger.info("coder_syntax_fixed round=%d new_len=%d", ctx.round, len(new_code))
+                    except SyntaxError:
+                        if prev_code:
+                            new_code = prev_code
+
     await _notify({"type": "stream_end", "agent": "coder"})
     new_msg = {
         "agent": "coder",
@@ -1077,14 +1102,28 @@ async def final_fix_node(state: DebateState) -> dict:
         await _notify_budget(budget, "arbitration", "coder")
 
         if response.code:
-            new_code = response.code
-            ctx.current_code = new_code
+            candidate = response.code
+            use_candidate = True
+            if new_code and len(candidate) < len(new_code) * 0.3:
+                logger.warning("final_fix_code_regressed prev=%d new=%d, keeping prev",
+                               len(new_code), len(candidate))
+                use_candidate = False
+            if use_candidate:
+                try:
+                    compile(candidate, "<final_fix>", "exec")
+                except SyntaxError:
+                    logger.warning("final_fix_code_syntax_error, keeping prev (%d chars)",
+                                   len(new_code))
+                    use_candidate = False
+            if use_candidate:
+                new_code = candidate
+                ctx.current_code = new_code
 
         fix_msg = {
             "agent": "coder",
             "content": f"[修复 attempt {attempt+1}] {response.content}",
             "round": state["round"] + 1,
-            "code": response.code,
+            "code": new_code,
             "structured": response.structured,
         }
         await _notify({"type": "message", **fix_msg})
@@ -1296,12 +1335,28 @@ async def focused_retry_node(state: DebateState) -> dict:
     record_agent_call("coder", response.tokens_used, time.monotonic() - start)
     await _notify_budget(budget, "debate", "coder")
 
-    new_code = response.code or state.get("current_code", "")
+    prev_code = state.get("current_code", "")
+    new_code = response.code or prev_code
+
+    # Code regression protection + syntax validation (same as coder_node)
+    if prev_code and new_code and new_code != prev_code:
+        if len(new_code) < len(prev_code) * 0.3:
+            logger.warning("focused_retry_code_regressed prev=%d new=%d, keeping prev",
+                           len(prev_code), len(new_code))
+            new_code = prev_code
+        else:
+            try:
+                compile(new_code, "<focused_retry>", "exec")
+            except SyntaxError:
+                logger.warning("focused_retry_code_syntax_error, keeping prev (%d chars)",
+                               len(prev_code))
+                new_code = prev_code
+
     fix_msg = {
         "agent": "coder",
         "content": f"[聚焦修复 retry {retry_count + 1}] {response.content}",
         "round": state["round"] + 1,
-        "code": response.code,
+        "code": new_code if new_code != prev_code else response.code,
         "structured": response.structured,
     }
     await _notify({"type": "message", **fix_msg})
