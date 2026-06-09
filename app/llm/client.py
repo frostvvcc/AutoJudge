@@ -399,10 +399,9 @@ async def _call_anthropic_api(
         total_cache_read += getattr(response.usage, "cache_read_input_tokens", 0) or 0
         total_cache_creation += getattr(response.usage, "cache_creation_input_tokens", 0) or 0
 
-        if agent != "coder" or response.stop_reason != "tool_use":
-            break
-
         has_submit, pending_tool_calls = _extract_pending_tools(response.content)
+        if agent != "coder" or (not has_submit and not pending_tool_calls):
+            break
         if has_submit or not pending_tool_calls:
             break
 
@@ -613,7 +612,13 @@ async def _call_anthropic_proxy(
             total_cache_read += usage.get("cache_read_input_tokens", 0)
             total_cache_creation += usage.get("cache_creation_input_tokens", 0)
 
-            if agent != "coder" or data.get("stop_reason") != "tool_use":
+            # Proxy SSE sometimes returns stop_reason="end_turn" even when
+            # the model called tools. Check actual content blocks instead.
+            has_tool_block = any(
+                (b.get("type") if isinstance(b, dict) else getattr(b, "type", None)) == "tool_use"
+                for b in data.get("content", [])
+            )
+            if agent != "coder" or not has_tool_block:
                 break
 
             has_submit, pending_tool_calls = _extract_pending_tools(data.get("content", []))
