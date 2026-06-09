@@ -43,8 +43,21 @@ JUDGE_SUBMIT_TOOL = {
                         "current_status": {"type": "string", "description": "当前状态"},
                         "impact": {"type": "string", "description": "影响"},
                         "suggestion": {"type": "string", "description": "建议怎么手动修（具体到代码位置）"},
+                        "patches": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "line": {"type": "integer", "description": "要修改的行号（从1开始）"},
+                                    "find": {"type": "string", "description": "该行中要替换的原始文本片段"},
+                                    "replace": {"type": "string", "description": "替换后的文本片段"},
+                                },
+                                "required": ["line", "find", "replace"],
+                            },
+                            "description": "机器可执行的补丁列表。能精确定位到行号和文本替换的问题必须填写 patches，无法精确定位的留空数组",
+                        },
                     },
-                    "required": ["issue", "current_status", "impact", "suggestion"],
+                    "required": ["issue", "current_status", "impact", "suggestion", "patches"],
                 },
                 "description": "未完全解决的问题列表",
             },
@@ -153,7 +166,10 @@ class JudgeAgent:
 请分析并输出：
 1. 星级评级（1-5星）和一句话评语
 2. 已解决的问题列表（每条一句话）
-3. 未完全解决的问题列表（如果有），每条说清楚：当前状态、影响、建议怎么手动修
+3. 未完全解决的问题列表（如果有），每条说清楚：当前状态、影响、建议怎么修
+   对每个未解决问题，如果能精确到「第X行把A改成B」，必须输出 patches 数组：
+   patches: [{"line": 行号, "find": "要替换的原文", "replace": "替换后的文本"}]
+   系统会自动执行这些补丁。无法精确定位的问题 patches 留空数组。
 4. 安全/性能/正确性的百分比评分（0-100）
 5. 使用建议：这段代码能不能直接用？还是需要先做什么？
 6. 信心评分（0-1）
