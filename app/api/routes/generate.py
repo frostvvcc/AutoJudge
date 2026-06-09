@@ -29,12 +29,20 @@ def _compute_session_timeout(config: DebateConfig) -> int:
       per_round = coder_call + max(parallel_attackers) + cross_review
       total = rounds * per_round + overhead(requirement_parse + test_runner + judge)
     Then adds a 60% buffer for network/scheduling variance.
+
+    Benchmarked with real API calls (2026-06-10):
+      Coder (Opus, single call): ~110s, with 3-turn tool_use: ~330s
+      Attacker (Opus, parallel): ~63s per attacker, wall-clock ~80s
+      Cross-review (Haiku): ~32s
+      Judge (Opus): ~22s
     """
-    agent_call_seconds = 40
-    per_round = agent_call_seconds + (
-        max(len(config.attackers) * agent_call_seconds, agent_call_seconds)
-    ) + (agent_call_seconds if not config.skip_cross_review else 0)
-    overhead = agent_call_seconds * 3
+    coder_call_seconds = 330
+    attacker_call_seconds = 80
+    cross_review_seconds = 35
+    per_round = coder_call_seconds + attacker_call_seconds + (
+        cross_review_seconds if not config.skip_cross_review else 0
+    )
+    overhead = 300
     return int((config.max_rounds * per_round + overhead) * 1.6)
 
 degradation_mgr = DegradationManager()

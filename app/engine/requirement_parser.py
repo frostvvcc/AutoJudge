@@ -4,6 +4,7 @@ import json
 import logging
 
 from app.llm.client import call_agent
+from app.llm.model_router import get_model_for_agent
 from app.config import settings
 
 logger = logging.getLogger(__name__)
@@ -76,7 +77,7 @@ async def parse_requirement(
         messages=messages,
         tools=[PARSER_TOOL],
         tool_choice={"type": "tool", "name": "submit_analysis"},
-        model=settings.haiku_model,
+        model=get_model_for_agent("requirement_parser"),
         max_tokens=2000,
     )
 

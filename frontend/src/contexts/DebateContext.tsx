@@ -57,6 +57,17 @@ export interface DegradationData {
   circuit_breaker_state: string;
 }
 
+export interface AgentProgressInfo {
+  status: 'working' | 'done' | 'error';
+  startedAt: number;
+  estimatedSeconds: number;
+  elapsedSeconds?: number;
+  stance?: string;
+  findingsCount?: number;
+  hasCode?: boolean;
+  codeLines?: number;
+}
+
 interface DebateState {
   status: DebateStatus;
   messages: DebateMessage[];
@@ -76,6 +87,7 @@ interface DebateState {
   visitedPhases: Set<string>;
   budget: BudgetData | null;
   agentStreams: Record<string, string>;
+  agentProgress: Record<string, AgentProgressInfo>;
   submit: (task: string, language: string, mode?: string) => void;
   skipAttacker: (attacker: string) => void;
   stop: () => void;
@@ -113,6 +125,7 @@ export function DebateProvider({ children }: { children: ReactNode }) {
   const [visitedPhases, setVisitedPhases] = useState<Set<string>>(new Set());
   const [budget, setBudget] = useState<BudgetData | null>(null);
   const [agentStreams, setAgentStreams] = useState<Record<string, string>>({});
+  const [agentProgress, setAgentProgress] = useState<Record<string, AgentProgressInfo>>({});
 
   const wsSendRef = useRef<(data: Record<string, unknown>) => void>(() => {});
   const reconnectRef = useRef<{ task: string; language: string; mode: string; retries: number } | null>(null);
@@ -157,6 +170,7 @@ export function DebateProvider({ children }: { children: ReactNode }) {
         setStreamingAgent(null);
         setStreamingText('');
         setAgentStreams({});
+      setAgentProgress({});
         break;
 
       case 'agent_start':
@@ -176,7 +190,37 @@ export function DebateProvider({ children }: { children: ReactNode }) {
           return next;
         });
         setAgentStreams((prev) => ({ ...prev, [event.agent!]: '' }));
+        {
+          const raw = event as unknown as Record<string, unknown>;
+          const est = (raw.estimated_seconds as number) ?? 60;
+          setAgentProgress((prev) => ({
+            ...prev,
+            [event.agent!]: { status: 'working', startedAt: Date.now(), estimatedSeconds: est },
+          }));
+        }
         break;
+
+      case 'agent_done': {
+        const raw = event as unknown as Record<string, unknown>;
+        const agentName = (raw.agent as string) ?? '';
+        if (agentName) {
+          setAgentProgress((prev) => ({
+            ...prev,
+            [agentName]: {
+              ...prev[agentName],
+              status: 'done' as const,
+              startedAt: prev[agentName]?.startedAt ?? Date.now(),
+              estimatedSeconds: prev[agentName]?.estimatedSeconds ?? 60,
+              elapsedSeconds: raw.elapsed_seconds as number,
+              stance: raw.stance as string,
+              findingsCount: raw.findings_count as number,
+              hasCode: raw.has_code as boolean,
+              codeLines: raw.code_lines as number,
+            },
+          }));
+        }
+        break;
+      }
 
       case 'stream': {
         const raw = event as unknown as Record<string, unknown>;
@@ -433,6 +477,7 @@ export function DebateProvider({ children }: { children: ReactNode }) {
       setStreamingText('');
       setBudget(null);
       setAgentStreams({});
+      setAgentProgress({});
       startTimer();
 
       const ws = new WebSocket(getWsUrl());
@@ -578,6 +623,7 @@ export function DebateProvider({ children }: { children: ReactNode }) {
         visitedPhases,
         budget,
         agentStreams,
+        agentProgress,
         submit,
         skipAttacker,
         stop,

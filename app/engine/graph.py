@@ -110,6 +110,18 @@ async def _notify_budget(budget: 'BudgetManager', phase: str, agent: str):
     })
 
 
+AGENT_ESTIMATED_SECONDS = {
+    "coder": 120,
+    "security": 70,
+    "performance": 70,
+    "correctness": 70,
+    "judge": 25,
+    "arbitrator": 40,
+    "planner": 35,
+    "cross_review": 15,
+}
+
+
 def _make_stream_cb(agent_name: str):
     """Create a streaming callback that sends text deltas to the frontend."""
     async def _on_stream(delta: str):
@@ -381,7 +393,7 @@ async def coder_node(state: DebateState) -> dict:
 
     if ctx.round == 1:
         await _notify({"type": "phase_change", "phase": "coding"})
-    await _notify({"type": "agent_start", "agent": "coder"})
+    await _notify({"type": "agent_start", "agent": "coder", "estimated_seconds": AGENT_ESTIMATED_SECONDS.get("coder", 60)})
 
     if ctx.round == 1:
         selected_plan = state.get("selected_plan", "")
@@ -481,6 +493,15 @@ async def coder_node(state: DebateState) -> dict:
         new_code = prev_code
 
     await _notify({"type": "stream_end", "agent": "coder"})
+    elapsed_s = round(time.monotonic() - start, 1)
+    has_code = bool(new_code and len(new_code) > 50)
+    await _notify({
+        "type": "agent_done",
+        "agent": "coder",
+        "elapsed_seconds": elapsed_s,
+        "has_code": has_code,
+        "code_lines": len(new_code.split("\n")) if new_code else 0,
+    })
     new_msg = {
         "agent": "coder",
         "content": response.content,
@@ -508,7 +529,7 @@ async def _attacker_node(
     if agent_name in state.get("skip_list", []):
         return {}
 
-    await _notify({"type": "agent_start", "agent": agent_name})
+    await _notify({"type": "agent_start", "agent": agent_name, "estimated_seconds": AGENT_ESTIMATED_SECONDS.get(agent_name, 60)})
     ctx, budget = _build_context(state)
 
     current_code = state.get("current_code", "")
@@ -571,6 +592,17 @@ async def _attacker_node(
                         f["line_start"] = ln_idx + 1
                         f["line_end"] = f.get("line_end") or (ln_idx + 1)
                         break
+
+        findings_count = len(structured.get("findings", []))
+        stance = structured.get("stance", "unknown")
+        elapsed_s = round(time.monotonic() - start, 1)
+        await _notify({
+            "type": "agent_done",
+            "agent": agent_name,
+            "elapsed_seconds": elapsed_s,
+            "stance": stance,
+            "findings_count": findings_count,
+        })
 
         new_msg = {
             "agent": agent_name,

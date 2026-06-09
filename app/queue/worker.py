@@ -150,4 +150,4 @@ class WorkerSettings:
     functions = [run_debate_task]
     redis_settings = _parse_redis_url(settings.redis_url)
     max_jobs = settings.max_concurrent_debates
-    job_timeout = 600
+    job_timeout = 4500
