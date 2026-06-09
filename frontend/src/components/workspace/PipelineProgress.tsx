@@ -197,15 +197,26 @@ export default function PipelineProgress({
             </div>
           </div>
 
-          {/* Progress bar for debate rounds */}
-          {phase === 'debate' && maxRounds > 0 && (
-            <div className="mt-2 h-1 bg-gray-200 rounded-full overflow-hidden">
-              <div
-                className="h-full bg-gradient-to-r from-blue-400 to-blue-600 rounded-full transition-all duration-700"
-                style={{ width: `${Math.min((currentRound / maxRounds) * 100, 100)}%` }}
-              />
-            </div>
-          )}
+          {/* Overall progress bar */}
+          {isRunning && (() => {
+            const PHASE_PCT: Record<string, number> = {
+              analysis: 8, plan: 18, coding: 35,
+              debate: 40 + Math.min(currentRound / Math.max(maxRounds, 1), 1) * 35,
+              arbitration: 82, fixing: 88, judging: 95, done: 100,
+            };
+            const pct = PHASE_PCT[phase] ?? 5;
+            return (
+              <div className="mt-2 flex items-center gap-2">
+                <div className="flex-1 h-1 bg-gray-200 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-blue-400 to-blue-600 rounded-full transition-all duration-700"
+                    style={{ width: `${pct}%` }}
+                  />
+                </div>
+                <span className="text-[10px] text-gray-400 tabular-nums shrink-0">{Math.round(pct)}%</span>
+              </div>
+            );
+          })()}
         </div>
       )}
 

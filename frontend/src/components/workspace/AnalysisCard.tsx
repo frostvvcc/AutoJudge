@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { AnalysisData } from '../../contexts/DebateContext';
 
@@ -91,47 +92,70 @@ export default function AnalysisCard({ data }: Props) {
           </Section>
         )}
 
-        {/* Historical experiences */}
+        {/* Historical experiences — collapsible */}
         {experiences.length > 0 && (
-          <div className="border-t border-indigo-100 pt-4">
-            <div className="flex items-center gap-2 mb-2.5">
-              <span className="text-sm">📚</span>
-              <span className="text-xs font-semibold text-gray-700">
-                匹配到 {experiences.length} 条历史经验
-              </span>
-            </div>
-            <div className="space-y-2">
-              {experiences.map((exp, i) => (
-                <div
-                  key={i}
-                  className="flex items-start gap-2.5 px-3 py-2 rounded-lg bg-white border border-gray-100 hover:border-indigo-200 transition-colors"
-                >
-                  <SeverityBadge severity={exp.severity} />
-                  <div className="flex-1 min-w-0">
-                    <p className="text-xs text-gray-700 leading-relaxed">
-                      {extractIssueTitle(exp.content)}
-                    </p>
-                  </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    {exp.similarity != null && exp.similarity > 0 && (
-                      <span className="text-xs text-indigo-500 font-mono">{exp.similarity}%</span>
-                    )}
-                    {exp.session_id && (
-                      <Link
-                        to={`/workspace/${exp.session_id}`}
-                        onClick={(e) => e.stopPropagation()}
-                        className="text-xs text-indigo-400 hover:text-indigo-600 underline"
-                      >
-                        查看来源
-                      </Link>
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
+          <ExperienceSection experiences={experiences} />
         )}
       </div>
+    </div>
+  );
+}
+
+function ExperienceSection({ experiences }: { experiences: AnalysisData['experiences'] }) {
+  const [expanded, setExpanded] = useState(false);
+  const highCount = experiences.filter((e) => e.severity === 'high').length;
+
+  return (
+    <div className="border-t border-indigo-100 pt-4">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="flex items-center gap-2 mb-2.5 w-full text-left hover:opacity-80 transition-opacity"
+      >
+        <span className="text-sm">📚</span>
+        <span className="text-xs font-semibold text-gray-700">
+          历史经验参考
+        </span>
+        <span className="text-[10px] text-gray-400">
+          {experiences.length} 条{highCount > 0 ? `（${highCount} 条高危）` : ''}
+        </span>
+        <svg className={`w-3 h-3 text-gray-400 ml-auto transition-transform ${expanded ? 'rotate-180' : ''}`}
+          fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {expanded && (
+        <div className="space-y-2">
+          {experiences.map((exp, i) => {
+            const isHigh = exp.severity === 'high';
+            return (
+              <div
+                key={i}
+                className={`flex items-start gap-2.5 px-3 py-2 rounded-lg border transition-colors ${
+                  isHigh ? 'bg-red-50 border-red-200' : 'bg-white border-gray-100 hover:border-indigo-200'
+                }`}
+              >
+                <SeverityBadge severity={exp.severity} />
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs text-gray-700 leading-relaxed">
+                    {extractIssueTitle(exp.content)}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {exp.session_id && (
+                    <Link
+                      to={`/workspace/${exp.session_id}`}
+                      onClick={(e) => e.stopPropagation()}
+                      className="text-xs text-indigo-400 hover:text-indigo-600 underline"
+                    >
+                      来源
+                    </Link>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

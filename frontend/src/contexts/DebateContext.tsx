@@ -237,14 +237,18 @@ export function DebateProvider({ children }: { children: ReactNode }) {
 
       case 'budget_update': {
         const raw = event as unknown as Record<string, unknown>;
-        setBudget({
-          spent: (raw.spent as number) ?? 0,
-          total: (raw.total as number) ?? 100000,
-          phase: (raw.phase as string) ?? '',
-          agent: (raw.agent as string) ?? '',
-          by_agent: (raw.by_agent as Record<string, number>) ?? {},
-          cache_read: (raw.cache_read as number) ?? 0,
-          cache_creation: (raw.cache_creation as number) ?? 0,
+        const newSpent = (raw.spent as number) ?? 0;
+        setBudget((prev) => {
+          const prevSpent = prev?.spent ?? 0;
+          return {
+            spent: Math.max(prevSpent, newSpent),
+            total: (raw.total as number) ?? 100000,
+            phase: (raw.phase as string) ?? '',
+            agent: (raw.agent as string) ?? '',
+            by_agent: (raw.by_agent as Record<string, number>) ?? {},
+            cache_read: Math.max(prev?.cache_read ?? 0, (raw.cache_read as number) ?? 0),
+            cache_creation: Math.max(prev?.cache_creation ?? 0, (raw.cache_creation as number) ?? 0),
+          };
         });
         break;
       }
@@ -362,6 +366,20 @@ export function DebateProvider({ children }: { children: ReactNode }) {
           return newPhase;
         });
         setActiveAgents(new Set());
+
+        const PHASE_STATUS: Record<string, string> = {
+          analysis: '正在分析需求...',
+          plan: 'Coder 正在设计方案...',
+          coding: 'Coder 正在编写代码...',
+          debate: '辩论进行中 — Attacker 正在审查代码...',
+          arbitration: 'Arbitrator 正在仲裁争议...',
+          fixing: 'Coder 正在修复问题...',
+          judging: 'Judge 正在生成质量报告...',
+          done: '完成',
+        };
+        if (PHASE_STATUS[newPhase]) {
+          setStatusText(PHASE_STATUS[newPhase]);
+        }
         break;
       }
 

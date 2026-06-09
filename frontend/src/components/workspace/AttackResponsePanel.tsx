@@ -232,7 +232,9 @@ export default function AttackResponsePanel({
                     satisfiedEntries.push({ agent: m.agent, message: msg, anchorLine: prevFinding?.line_start });
                   }
                 }
-                const roundAllSatisfied = satisfiedEntries.length > 0 && allFindings.length === 0;
+                const attackerAgentsInRound = new Set(attackerMsgs.map(m => m.agent));
+                const allAttackersPresent = attackerAgentsInRound.size >= 3;
+                const roundAllSatisfied = allAttackersPresent && satisfiedEntries.length === attackerAgentsInRound.size;
 
                 // Smart layout: if code is very short but findings are many with no line refs,
                 // this is a design/plan review, not a code review — use text list instead of annotation layout
@@ -499,7 +501,7 @@ function RoundSummaryChips({ messages }: { messages: DebateMessage[] }) {
     <div className="flex items-center gap-2 text-xs">
       {acceptCount > 0 && <span className="px-1.5 py-0.5 rounded-full bg-green-100 text-green-700">{acceptCount} 修复</span>}
       {rebutCount > 0 && <span className="px-1.5 py-0.5 rounded-full bg-yellow-100 text-yellow-700">{rebutCount} 反驳</span>}
-      {satisfiedCount > 0 && <span className="px-1.5 py-0.5 rounded-full bg-green-100 text-green-700">{satisfiedCount}/3 通过</span>}
+      {attackerMsgs.length > 0 && <span className={`px-1.5 py-0.5 rounded-full ${satisfiedCount === attackerMsgs.length ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{satisfiedCount}/{attackerMsgs.length} 通过</span>}
     </div>
   );
 }
