@@ -9,6 +9,14 @@ import AnalysisCard from './AnalysisCard';
 import AnnotatedCodeReview from './AnnotatedCodeReview';
 import type { InterruptData, AnalysisData } from '../../contexts/DebateContext';
 
+function safeFindings(raw: unknown): Array<Record<string, unknown>> {
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === 'string') {
+    try { const parsed = JSON.parse(raw); if (Array.isArray(parsed)) return parsed; } catch {}
+  }
+  return [];
+}
+
 interface Props {
   messages: DebateMessage[];
   currentRound: number;
@@ -183,7 +191,7 @@ export default function AttackResponsePanel({
                 const allFindings: Array<{ agent: string; category: string; severity: string; description: string; test_input?: string; line_start?: number; line_end?: number }> = [];
                 for (const m of allAttackerAndCrossMsgs) {
                   const s = m.structured as Record<string, unknown> | undefined;
-                  const findings = (s?.findings as Array<Record<string, unknown>>) ?? [];
+                  const findings = safeFindings(s?.findings);
                   for (const f of findings) {
                     allFindings.push({
                       agent: m.agent,
@@ -362,7 +370,7 @@ export default function AttackResponsePanel({
               if (isDebateRound) {
                 for (const m of allAttackerMsgs2) {
                   const s = m.structured as Record<string, unknown> | undefined;
-                  for (const f of ((s?.findings as Array<Record<string, unknown>>) ?? [])) {
+                  for (const f of (safeFindings(s?.findings))) {
                     allFindings.push({
                       agent: m.agent,
                       category: (f.category as string) ?? '',
@@ -536,7 +544,7 @@ function ThreadedDebateView({
     <div className="space-y-3">
       {attackerMsgs.map((msg, mi) => {
         const s = msg.structured as Record<string, unknown> | undefined;
-        const findings = (s?.findings as Array<Record<string, string>>) ?? [];
+        const findings = safeFindings(s?.findings) as Array<Record<string, string>>;
         const stance = s?.stance as string | undefined;
         const isSatisfied = stance === 'satisfied';
         const agentIcon = msg.agent === 'security' ? '🔒' : msg.agent === 'performance' ? '⚡' : '✓';
@@ -679,7 +687,7 @@ function CoderResponsesSection({
     if (!['security', 'performance', 'correctness'].includes(msg.agent)) continue;
     if ((msg.round ?? 0) >= currentRound) continue;
     const s = msg.structured as Record<string, unknown> | undefined;
-    const findings = (s?.findings as Array<Record<string, string>>) ?? [];
+    const findings = safeFindings(s?.findings) as Array<Record<string, string>>;
     findings.forEach((f, i) => {
       const ref = `${msg.agent.toUpperCase()}-${String(i + 1).padStart(3, '0')}`;
       prevRoundFindings.set(ref, { finding: f, agent: msg.agent });

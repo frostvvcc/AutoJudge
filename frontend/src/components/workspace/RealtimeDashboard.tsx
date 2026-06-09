@@ -35,7 +35,8 @@ export default function RealtimeDashboard({ messages, risk, metrics }: Props) {
   for (const msg of messages) {
     if (attackers.includes(msg.agent) && msg.structured) {
       const s = msg.structured as Record<string, unknown>;
-      const findings = (s.findings as Array<Record<string, unknown>>) ?? [];
+      const rawFindings = s.findings;
+      const findings = Array.isArray(rawFindings) ? rawFindings : [];
       attackerStats[msg.agent].findings += findings.length;
       if (typeof s.stance === 'string') {
         attackerStats[msg.agent].stance = s.stance;
