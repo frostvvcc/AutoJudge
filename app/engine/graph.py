@@ -287,9 +287,23 @@ async def plan_generate_node(state: DebateState) -> dict:
         await _notify({"type": "agent_start", "agent": "coder"})
 
         extra = state.get("extra_context", "")
+        parsed = state.get("parsed_requirement")
+        req_analysis = ""
+        if parsed and isinstance(parsed, dict):
+            parts = []
+            if parsed.get("functional"):
+                parts.append("功能点：" + "、".join(parsed["functional"]))
+            if parsed.get("constraints"):
+                parts.append("约束：" + "、".join(parsed["constraints"]))
+            if parsed.get("implicit"):
+                parts.append("隐含需求：" + "、".join(parsed["implicit"]))
+            if parsed.get("edge_cases"):
+                parts.append("边界场景：" + "、".join(parsed["edge_cases"]))
+            if parts:
+                req_analysis = "\n\n需求分析结果：\n" + "\n".join(parts)
         prompt = PLAN_PHASE_PROMPT.format(
             requirement=state["requirement"],
-            extra_context=f"补充信息：{extra}" if extra else "",
+            extra_context=(f"补充信息：{extra}" if extra else "") + req_analysis,
         )
 
         start = time.monotonic()
@@ -458,17 +472,19 @@ async def coder_node(state: DebateState) -> dict:
                     finding_list_lines.append(f"  {fid}: [{sev}] {cat} — {desc[:120]}")
                     fix_descriptions.append(desc)
 
+        selected_plan = state.get("selected_plan", "")
         prompt = (
             "请逐条回应上一轮 Attacker 提出的问题。\n"
             "对每个攻击：如果合理 → accept_and_fix 并修复代码；如果不合理 → rebut_with_evidence 并给出证据。\n\n"
         )
+        if selected_plan:
+            prompt += f"确认的方案（修复时不要偏离方案方向）：\n{selected_plan}\n\n"
         if finding_list_lines:
             prompt += "需要回应的问题（finding_ref 必须使用下面的 ID，如 SECURITY-001）：\n"
             prompt += "\n".join(finding_list_lines)
             prompt += "\n\n"
         prompt += (
             "修复后必须通过 updated_code 提交**完整的**新版代码（在上一版基础上修改，不要重写或提交测试脚本）。\n"
-            ""
         )
         if current:
             prompt += f"\n\n你当前的完整代码如下（在此基础上修改）：\n```\n{current}\n```"
