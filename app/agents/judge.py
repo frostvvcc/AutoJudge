@@ -43,21 +43,8 @@ JUDGE_SUBMIT_TOOL = {
                         "current_status": {"type": "string", "description": "当前状态"},
                         "impact": {"type": "string", "description": "影响"},
                         "suggestion": {"type": "string", "description": "建议怎么手动修（具体到代码位置）"},
-                        "patches": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "line": {"type": "integer", "description": "要修改的行号（从1开始）"},
-                                    "find": {"type": "string", "description": "该行中要替换的原始文本片段"},
-                                    "replace": {"type": "string", "description": "替换后的文本片段"},
-                                },
-                                "required": ["line", "find", "replace"],
-                            },
-                            "description": "机器可执行的补丁列表。能精确定位到行号和文本替换的问题必须填写 patches，无法精确定位的留空数组",
-                        },
                     },
-                    "required": ["issue", "current_status", "impact", "suggestion", "patches"],
+                    "required": ["issue", "current_status", "impact", "suggestion"],
                 },
                 "description": "未完全解决的问题列表",
             },
@@ -154,9 +141,16 @@ class JudgeAgent:
     async def summarize(
         self, context: DebateContext, budget: BudgetManager
     ) -> dict:
+        def _format_message(m):
+            header = f"[Round {m.round}][{m.agent.upper()}]"
+            if m.agent == "coder" and m.code:
+                lines = len(m.code.splitlines())
+                size = len(m.code)
+                return f"{header} {m.content}\n[提交代码: {lines} 行, {size} 字节]"
+            return f"{header} {m.content}"
+
         transcript = "\n\n".join(
-            f"[Round {m.round}][{m.agent.upper()}] {m.content}"
-            for m in context.messages
+            _format_message(m) for m in context.messages
         )
 
         system_prompt = """你是 AutoJudge 的报告撰写者。你的读者不是程序员，是普通用户。
@@ -165,19 +159,27 @@ class JudgeAgent:
 
 请分析并输出：
 1. 星级评级（1-5星）和一句话评语
-2. 已解决的问题列表（每条一句话）
-3. 未完全解决的问题列表（如果有），每条说清楚：当前状态、影响、建议怎么修
-   对每个未解决问题，如果能精确到「第X行把A改成B」，必须输出 patches 数组：
-   patches: [{"line": 行号, "find": "要替换的原文", "replace": "替换后的文本"}]
-   系统会自动执行这些补丁。无法精确定位的问题 patches 留空数组。
-4. 安全/性能/正确性的百分比评分（0-100）
-5. 使用建议：这段代码能不能直接用？还是需要先做什么？
-6. 信心评分（0-1）
+2. 需求实现比对：逐条检查需求功能点，标注"已实现"或"未实现"
+3. 已解决的问题列表（每条一句话）
+4. 未完全解决的问题列表（如果有），每条说清楚：当前状态、影响、建议怎么手动修
+5. 安全/性能/正确性的百分比评分（0-100）
+6. 使用建议：这段代码能不能直接用？还是需要先做什么？
+7. 信心评分（0-1）
 
 原则：
+- 先比对需求再评质量——功能没实现完的代码不能给高星
 - 不说"建议优化"这种空话，说"在第 XX 行加上 YYY"
 - 如果代码是凑合出来的，不假装完美——诚实说清楚哪里凑合了
 - 用户看完你的报告应该知道：能不能用？不能用的话哪里需要动？怎么动？"""
+
+        req_checklist = ""
+        parsed = context.parsed_requirement
+        if parsed and isinstance(parsed, dict):
+            items = []
+            for f in (parsed.get("functional") or []):
+                items.append(f"- [ ] {f}")
+            if items:
+                req_checklist = "\n\n需求功能点清单（请逐条比对代码是否实现）：\n" + "\n".join(items)
 
         messages = [
             {
@@ -186,6 +188,7 @@ class JudgeAgent:
                     f"编码需求：{context.requirement}\n\n"
                     f"最终代码：\n```\n{context.current_code}\n```\n\n"
                     f"完整对话记录：\n{transcript}"
+                    f"{req_checklist}"
                 ),
             }
         ]

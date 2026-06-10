@@ -38,48 +38,6 @@ async def _emit_stream(text: str):
 
 
 
-def _extract_pending_tools(content_blocks) -> tuple[bool, list]:
-    """Shared logic: scan response content for tool_use blocks.
-    Returns (has_submit, pending_tool_calls).
-    Works with both SDK objects (attr access) and dicts (key access).
-    """
-    pending = []
-    has_submit = False
-    for block in content_blocks:
-        block_type = getattr(block, "type", None) or (block.get("type") if isinstance(block, dict) else None)
-        if block_type != "tool_use":
-            continue
-        name = getattr(block, "name", None) or (block.get("name") if isinstance(block, dict) else None)
-        if name == "submit_response":
-            has_submit = True
-        else:
-            pending.append(block)
-    return has_submit, pending
-
-
-async def _execute_tool_calls(pending_tool_calls: list, turn: int = 0) -> list[dict]:
-    """Execute Coder verification tools and return tool_result messages."""
-    results = []
-    for tc in pending_tool_calls:
-        name = getattr(tc, "name", None) or tc.get("name")
-        tc_input = getattr(tc, "input", None) or tc.get("input", {})
-        tc_id = getattr(tc, "id", None) or tc.get("id")
-
-        tool_label = "自测代码" if name == "run_code_snippet" else "查询文档"
-        await _emit_stream(f"\n🔧 Coder {tool_label}（第 {turn + 1} 轮）...\n")
-
-        result_text = await _execute_coder_tool(name, tc_input)
-        results.append({
-            "type": "tool_result",
-            "tool_use_id": tc_id,
-            "content": result_text,
-        })
-        logger.info("coder_tool_executed tool=%s turn=%d", name, turn)
-
-        passed = "succeeded" in result_text.lower() or "pass" in result_text.lower()
-        status = "✅ 通过" if passed else "❌ 失败，修复中..."
-        await _emit_stream(f"  结果：{status}\n")
-    return results
 
 
 # Anthropic SDK tool definitions (used only when llm_backend = "anthropic_api")
@@ -140,32 +98,7 @@ CODER_SUBMIT_TOOL = {
     },
 }
 
-CODER_TOOLS = [
-    CODER_SUBMIT_TOOL,
-    {
-        "name": "run_code_snippet",
-        "description": "执行一段代码片段，验证某个行为是否符合预期",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "code": {"type": "string", "description": "要执行的代码"},
-                "expected": {"type": "string", "description": "预期行为描述"},
-            },
-            "required": ["code", "expected"],
-        },
-    },
-    {
-        "name": "check_documentation",
-        "description": "查询框架/库的官方文档，验证某个 API 的行为",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "query": {"type": "string", "description": "要查询的内容"},
-            },
-            "required": ["query"],
-        },
-    },
-]
+CODER_TOOLS = [CODER_SUBMIT_TOOL]
 
 
 # ─── AgentResponse (shared) ──────────────────────────────────────────────────
@@ -191,6 +124,21 @@ class AgentResponse:
         self.cache_creation = cache_creation
         self.latency_ms = latency_ms
 
+
+
+AGENT_TEMPERATURE = {
+    "coder": 0.3,
+    "planner": 0.5,
+    "security": 0.7,
+    "performance": 0.7,
+    "correctness": 0.7,
+    "judge": 0.3,
+    "arbitrator": 0.4,
+    "cross_review": 0.5,
+    "compressor": 0.2,
+    "requirement_parser": 0.3,
+    "test_generator": 0.3,
+}
 
 
 # ─── Backend 2: Anthropic SDK (direct API) ───────────────────────────────────
@@ -262,64 +210,6 @@ def _get_tools_for_agent(agent: str) -> tuple[list[dict], dict]:
     return [], {"type": "auto"}
 
 
-async def _execute_coder_tool(tool_name: str, tool_input: dict) -> str:
-    """Execute Coder's verification tools and return result text."""
-    if tool_name == "run_code_snippet":
-        return await _run_code_snippet(
-            tool_input.get("code", ""), tool_input.get("expected", "")
-        )
-    elif tool_name == "check_documentation":
-        return (
-            f"Documentation query: {tool_input.get('query', '')}\n"
-            "Please verify this based on your knowledge of the framework/library. "
-            "If uncertain, note the uncertainty in your response."
-        )
-    return f"Unknown tool: {tool_name}"
-
-
-async def _run_code_snippet(code: str, expected: str) -> str:
-    """Run a code snippet in Docker sandbox with resource limits."""
-    import tempfile
-
-    with tempfile.TemporaryDirectory() as tmpdir:
-        code_path = f"{tmpdir}/snippet.py"
-        with open(code_path, "w") as f:
-            f.write(code)
-
-        try:
-            proc = await asyncio.create_subprocess_exec(
-                "docker", "run", "--rm",
-                "--network=none",
-                "--read-only",
-                "--memory=256m",
-                "--cpus=0.5",
-                "-v", f"{tmpdir}:/workspace:ro",
-                "-w", "/workspace",
-                "--tmpfs", "/tmp:size=64m",
-                "autojudge-sandbox:latest",
-                "python", "snippet.py",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            stdout, stderr = await asyncio.wait_for(
-                proc.communicate(), timeout=15
-            )
-            output = stdout.decode("utf-8", errors="replace")
-            errors = stderr.decode("utf-8", errors="replace")
-            if proc.returncode == 0:
-                return f"Execution succeeded.\nOutput:\n{output}\nExpected: {expected}"
-            else:
-                return f"Execution failed (exit {proc.returncode}).\nStderr:\n{errors}\nExpected: {expected}"
-        except asyncio.TimeoutError:
-            return "Execution timed out after 15s."
-        except FileNotFoundError:
-            from app.engine.test_runner import SandboxUnavailableError
-            raise SandboxUnavailableError(
-                "Docker is required for code execution. "
-                "Install Docker or start the Docker daemon."
-            )
-
-
 async def _call_anthropic_api(
     agent: str,
     system_prompt: str,
@@ -330,12 +220,7 @@ async def _call_anthropic_api(
     tool_choice: dict | None = None,
     api_key: str | None = None,
 ) -> AgentResponse:
-    """Call Anthropic API directly with tool_use structured output.
-
-    For Coder agent, implements a tool_use loop: if the model calls
-    run_code_snippet or check_documentation, execute the tool and
-    continue the conversation until submit_response is called.
-    """
+    """Call Anthropic API directly with tool_use structured output."""
     import anthropic
     from app.llm.model_router import get_model_for_agent
 
@@ -353,195 +238,44 @@ async def _call_anthropic_api(
     if cached_tools:
         cached_tools[-1] = {**cached_tools[-1], "cache_control": {"type": "ephemeral"}}
 
-    conv_messages = list(messages)
-    total_tokens = 0
-    total_cache_read = 0
-    total_cache_creation = 0
+    temperature = AGENT_TEMPERATURE.get(agent, 0.5)
 
     start = time.monotonic()
-    max_tool_turns = 3
 
-    for turn in range(max_tool_turns + 1):
-        is_last_turn = (turn == max_tool_turns)
-        if agent == "coder":
-            effective_choice = (
-                {"type": "tool", "name": "submit_response"}
-                if is_last_turn or turn >= 2
-                else {"type": "any"}
-            )
-        else:
-            effective_choice = tool_choice
-
-        has_stream_cb = _stream_callback.get(None) is not None
-        if has_stream_cb:
-            async with client.messages.stream(
-                model=resolved_model,
-                system=system_blocks,
-                messages=conv_messages,
-                tools=cached_tools,
-                tool_choice=effective_choice,
-                max_tokens=max_tokens,
-            ) as stream:
-                async for text in stream.text_stream:
-                    await _emit_stream(text)
-                response = await stream.get_final_message()
-        else:
-            response = await client.messages.create(
-                model=resolved_model,
-                system=system_blocks,
-                messages=conv_messages,
-                tools=cached_tools,
-                tool_choice=effective_choice,
-                max_tokens=max_tokens,
-            )
-
-        total_tokens += response.usage.input_tokens + response.usage.output_tokens
-        total_cache_read += getattr(response.usage, "cache_read_input_tokens", 0) or 0
-        total_cache_creation += getattr(response.usage, "cache_creation_input_tokens", 0) or 0
-
-        has_submit, pending_tool_calls = _extract_pending_tools(response.content)
-        if agent != "coder" or (not has_submit and not pending_tool_calls):
-            break
-        if has_submit or not pending_tool_calls:
-            break
-
-        conv_messages.append({"role": "assistant", "content": response.content})
-        tool_results = await _execute_tool_calls(pending_tool_calls, turn)
-        conv_messages.append({"role": "user", "content": tool_results})
+    has_stream_cb = _stream_callback.get(None) is not None
+    if has_stream_cb:
+        async with client.messages.stream(
+            model=resolved_model,
+            system=system_blocks,
+            messages=messages,
+            tools=cached_tools,
+            tool_choice=tool_choice,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        ) as stream:
+            async for text in stream.text_stream:
+                await _emit_stream(text)
+            response = await stream.get_final_message()
+    else:
+        response = await client.messages.create(
+            model=resolved_model,
+            system=system_blocks,
+            messages=messages,
+            tools=cached_tools,
+            tool_choice=tool_choice,
+            max_tokens=max_tokens,
+            temperature=temperature,
+        )
 
     elapsed_ms = int((time.monotonic() - start) * 1000)
 
     result = _parse_api_response(response, agent)
-    result.tokens_used = total_tokens
-    result.cache_read = total_cache_read
-    result.cache_creation = total_cache_creation
+    result.tokens_used = response.usage.input_tokens + response.usage.output_tokens
+    result.cache_read = getattr(response.usage, "cache_read_input_tokens", 0) or 0
+    result.cache_creation = getattr(response.usage, "cache_creation_input_tokens", 0) or 0
     result.latency_ms = elapsed_ms
     return result
 
-
-
-def _recover_corrupted_json(raw: str) -> dict:
-    """Recover tool_use input from corrupted SSE JSON.
-
-    Proxy SSE sometimes duplicates input_json_delta, producing:
-    - "{valid1}{valid2}" (two complete copies)
-    - "{truncated...}{complete}" (partial + complete)
-    - Fragment-level duplication within one JSON
-
-    Strategy: raw_decode first complete object → bracket-balanced scan
-    → regex extract of key fields as last resort. Never return {}.
-    """
-    # Strategy 1: raw_decode parses the first complete JSON object
-    try:
-        parsed, _ = json.JSONDecoder().raw_decode(raw)
-        if isinstance(parsed, dict) and parsed:
-            logger.info("sse_json_recovered via raw_decode keys=%s", list(parsed.keys()))
-            return parsed
-    except (json.JSONDecodeError, ValueError):
-        pass
-
-    # Strategy 2: find the LAST top-level '{' using bracket balancing
-    # (skip all { inside JSON strings to avoid false positives from code content)
-    top_level_starts = _find_top_level_braces(raw)
-    for start_pos in reversed(top_level_starts):
-        try:
-            parsed = json.loads(raw[start_pos:])
-            if isinstance(parsed, dict) and parsed:
-                logger.info("sse_json_recovered via bracket scan pos=%d keys=%s",
-                            start_pos, list(parsed.keys()))
-                return parsed
-        except (json.JSONDecodeError, ValueError):
-            continue
-
-    # Strategy 3: regex extract key fields from raw string
-    # This is the last resort — even with corrupted JSON, we can usually
-    # find "updated_code":"..." because it's a simple string field
-    result = _regex_extract_fields(raw)
-    if result:
-        logger.warning("sse_json_recovered via regex extraction keys=%s", list(result.keys()))
-        return result
-
-    logger.error("sse_json_recovery_failed raw_len=%d raw_start=%s", len(raw), raw[:200])
-    return {}
-
-
-def _find_top_level_braces(raw: str) -> list[int]:
-    """Find positions of '{' that are NOT inside JSON strings."""
-    positions = []
-    in_string = False
-    escape = False
-    for i, ch in enumerate(raw):
-        if escape:
-            escape = False
-            continue
-        if ch == '\\' and in_string:
-            escape = True
-            continue
-        if ch == '"':
-            in_string = not in_string
-            continue
-        if not in_string and ch == '{':
-            positions.append(i)
-    return positions
-
-
-def _regex_extract_fields(raw: str) -> dict:
-    """Extract key fields from corrupted JSON using regex.
-    Handles updated_code, message, responses even when full JSON is broken."""
-    import re
-    result = {}
-
-    # Extract updated_code (the critical field)
-    code_match = re.search(r'"updated_code"\s*:\s*"', raw)
-    if code_match:
-        start = code_match.end()
-        # Walk forward, handling escapes, to find the closing "
-        code_chars = []
-        i = start
-        while i < len(raw):
-            ch = raw[i]
-            if ch == '\\' and i + 1 < len(raw):
-                code_chars.append(ch)
-                code_chars.append(raw[i + 1])
-                i += 2
-                continue
-            if ch == '"':
-                break
-            code_chars.append(ch)
-            i += 1
-        if code_chars:
-            code_str = ''.join(code_chars)
-            # Unescape JSON string escapes
-            try:
-                result["updated_code"] = json.loads(f'"{code_str}"')
-            except (json.JSONDecodeError, ValueError):
-                result["updated_code"] = code_str.replace('\\n', '\n').replace('\\t', '\t').replace('\\"', '"')
-
-    # Extract message
-    msg_match = re.search(r'"message"\s*:\s*"', raw)
-    if msg_match:
-        start = msg_match.end()
-        i = start
-        msg_chars = []
-        while i < len(raw):
-            ch = raw[i]
-            if ch == '\\' and i + 1 < len(raw):
-                msg_chars.append(ch)
-                msg_chars.append(raw[i + 1])
-                i += 2
-                continue
-            if ch == '"':
-                break
-            msg_chars.append(ch)
-            i += 1
-        if msg_chars:
-            msg_str = ''.join(msg_chars)
-            try:
-                result["message"] = json.loads(f'"{msg_str}"')
-            except (json.JSONDecodeError, ValueError):
-                result["message"] = msg_str.replace('\\n', '\n').replace('\\t', '\t')
-
-    return result
 
 
 # ─── Backend 3: Anthropic-compatible proxy (SSE streaming) ──────────────────
@@ -613,7 +347,7 @@ async def _stream_anthropic_sse(http, url: str, headers: dict, body: dict) -> di
                         try:
                             current_block["input"] = json.loads(raw)
                         except json.JSONDecodeError:
-                            current_block["input"] = _recover_corrupted_json(raw)
+                            current_block["input"] = {}
                     content_blocks.append(current_block)
                     current_block = None
 
@@ -663,15 +397,17 @@ async def _call_anthropic_proxy(
     if cached_tools:
         cached_tools[-1] = {**cached_tools[-1], "cache_control": {"type": "ephemeral"}}
 
+    temperature = AGENT_TEMPERATURE.get(agent, 0.5)
+
     body: dict = {
         "model": resolved_model,
         "max_tokens": max_tokens,
         "system": system_blocks,
         "messages": messages,
+        "temperature": temperature,
     }
     if cached_tools:
         body["tools"] = cached_tools
-        body["thinking"] = {"type": "disabled"}
     if tool_choice:
         body["tool_choice"] = tool_choice
 
@@ -686,51 +422,13 @@ async def _call_anthropic_proxy(
 
     start = time.monotonic()
 
-    conv_messages = list(messages)
-    total_tokens = 0
-    total_cache_read = 0
-    total_cache_creation = 0
-    max_tool_turns = 3 if agent == "coder" else 0
-
     async with httpx.AsyncClient(timeout=httpx.Timeout(connect=30, read=400, write=30, pool=30)) as http:
-        for turn in range(max_tool_turns + 1):
-            body["messages"] = conv_messages
-            is_last_turn = (turn == max_tool_turns)
-            if agent == "coder":
-                effective_choice = (
-                    {"type": "tool", "name": "submit_response"}
-                    if is_last_turn or turn >= 2
-                    else {"type": "any"}
-                )
-            else:
-                effective_choice = tool_choice
-            if effective_choice:
-                body["tool_choice"] = effective_choice
+        data = await _stream_anthropic_sse(http, url, headers, body)
 
-            data = await _stream_anthropic_sse(http, url, headers, body)
-
-            usage = data.get("usage", {})
-            total_tokens += usage.get("input_tokens", 0) + usage.get("output_tokens", 0)
-            total_cache_read += usage.get("cache_read_input_tokens", 0)
-            total_cache_creation += usage.get("cache_creation_input_tokens", 0)
-
-            # Proxy SSE sometimes returns stop_reason="end_turn" even when
-            # the model called tools. Check actual content blocks instead.
-            has_tool_block = any(
-                (b.get("type") if isinstance(b, dict) else getattr(b, "type", None)) == "tool_use"
-                for b in data.get("content", [])
-            )
-            if agent != "coder" or not has_tool_block:
-                break
-
-            has_submit, pending_tool_calls = _extract_pending_tools(data.get("content", []))
-            if has_submit or not pending_tool_calls:
-                break
-
-            conv_messages.append({"role": "assistant", "content": data["content"]})
-            tool_results = await _execute_tool_calls(pending_tool_calls, turn)
-            conv_messages.append({"role": "user", "content": tool_results})
-
+    usage = data.get("usage", {})
+    total_tokens = usage.get("input_tokens", 0) + usage.get("output_tokens", 0)
+    total_cache_read = usage.get("cache_read_input_tokens", 0)
+    total_cache_creation = usage.get("cache_creation_input_tokens", 0)
     elapsed_ms = int((time.monotonic() - start) * 1000)
 
     content_text = ""
@@ -746,22 +444,6 @@ async def _call_anthropic_proxy(
                 content_text = structured["message"]
             if "updated_code" in structured:
                 code = structured["updated_code"]
-
-    if code is None and agent == "coder":
-        for msg in reversed(conv_messages):
-            if msg.get("role") != "assistant":
-                continue
-            for block in (msg.get("content") or []):
-                if isinstance(block, dict) and block.get("type") == "tool_use":
-                    inp = block.get("input", {})
-                    if block.get("name") == "submit_response" and inp.get("updated_code"):
-                        code = inp["updated_code"]
-                        structured = inp
-                        break
-            if code:
-                break
-        if code is None:
-            logger.warning("coder_code_extraction_failed: no updated_code found in any submit_response")
 
     if agent == "judge":
         block_types = [b.get("type") for b in data.get("content", [])]

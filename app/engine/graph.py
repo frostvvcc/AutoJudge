@@ -110,18 +110,6 @@ async def _notify_budget(budget: 'BudgetManager', phase: str, agent: str):
     })
 
 
-AGENT_ESTIMATED_SECONDS = {
-    "coder": 120,
-    "security": 70,
-    "performance": 70,
-    "correctness": 70,
-    "judge": 25,
-    "arbitrator": 40,
-    "planner": 35,
-    "cross_review": 15,
-}
-
-
 def _make_stream_cb(agent_name: str):
     """Create a streaming callback that sends text deltas to the frontend."""
     async def _on_stream(delta: str):
@@ -256,17 +244,56 @@ PLAN_PHASE_PROMPT = """根据以下需求，设计恰好 2 个不同方向的实
 {extra_context}"""
 
 
-async def plan_node(state: DebateState) -> dict:
-    """Plan Phase: single interrupt per execution, state-driven iteration."""
+async def req_confirm_node(state: DebateState) -> dict:
+    """Present parsed requirements to user for confirmation via interrupt.
+
+    User can check/uncheck items and add supplements. The confirmed result
+    overwrites parsed_requirement in state — all downstream agents read
+    the user-confirmed version automatically.
+    """
+    parsed = state.get("parsed_requirement", {})
+    if not parsed or not state.get("enable_interrupt"):
+        return {}
+
+    await _notify({"type": "phase_change", "phase": "analysis"})
+
+    user_input = interrupt({
+        "type": "requirement_confirm",
+        "parsed_requirement": parsed,
+    })
+
+    if not user_input or not isinstance(user_input, dict):
+        return {}
+
+    confirmed = user_input.get("confirmed")
+    if confirmed and isinstance(confirmed, dict):
+        supplements = user_input.get("supplements", "")
+        if supplements:
+            existing = confirmed.get("functional") or []
+            for line in supplements.strip().split("\n"):
+                line = line.strip()
+                if line:
+                    existing.append(line)
+            confirmed["functional"] = existing
+        return {"parsed_requirement": confirmed}
+
+    return {}
+
+
+async def plan_generate_node(state: DebateState) -> dict:
+    """Generate or adjust plans via LLM. No interrupt — stores result in state.
+
+    Separated from plan_select_node so that on LangGraph resume (after user
+    confirms a plan), only the lightweight select node re-executes — the
+    expensive LLM call is NOT repeated, and no spurious second interrupt fires.
+    """
     ctx, budget = _build_context(state)
 
     from app.llm.model_router import get_model_for_agent
     from app.llm.client import call_agent
 
     plans_content = state.get("plan_content", "")
-    plan_round = state.get("plan_round", 0)
     plan_action = state.get("plan_action", "")
-    max_plan_rounds = 7
 
     if plan_action == "chat" and plans_content:
         await _notify({"type": "phase_change", "phase": "plan"})
@@ -284,7 +311,7 @@ async def plan_node(state: DebateState) -> dict:
         try:
             response = await coder_agent.speak(ctx, adjust_prompt, budget)
         except Exception as e:
-            logger.warning("plan_node_chat_failed error=%s, retrying", e)
+            logger.warning("plan_generate_chat_failed error=%s, retrying", e)
             await asyncio.sleep(2)
             response = await coder_agent.speak(ctx, adjust_prompt, budget)
         record_agent_call("coder", response.tokens_used, time.monotonic() - start)
@@ -296,9 +323,23 @@ async def plan_node(state: DebateState) -> dict:
         await _notify({"type": "agent_start", "agent": "coder"})
 
         extra = state.get("extra_context", "")
+        parsed = state.get("parsed_requirement")
+        req_analysis = ""
+        if parsed and isinstance(parsed, dict):
+            parts = []
+            if parsed.get("functional"):
+                parts.append("功能点：" + "、".join(parsed["functional"]))
+            if parsed.get("constraints"):
+                parts.append("约束：" + "、".join(parsed["constraints"]))
+            if parsed.get("implicit"):
+                parts.append("隐含需求：" + "、".join(parsed["implicit"]))
+            if parsed.get("edge_cases"):
+                parts.append("边界场景：" + "、".join(parsed["edge_cases"]))
+            if parts:
+                req_analysis = "\n\n需求分析结果：\n" + "\n".join(parts)
         prompt = PLAN_PHASE_PROMPT.format(
             requirement=state["requirement"],
-            extra_context=f"补充信息：{extra}" if extra else "",
+            extra_context=(f"补充信息：{extra}" if extra else "") + req_analysis,
         )
 
         start = time.monotonic()
@@ -316,7 +357,7 @@ async def plan_node(state: DebateState) -> dict:
                 max_tokens=await budget.get_max_tokens("coder"),
             )
         except Exception as e:
-            logger.warning("plan_node_generate_failed error=%s, retrying", e)
+            logger.warning("plan_generate_failed error=%s, retrying", e)
             await asyncio.sleep(2)
             response = await call_agent(
                 agent="planner",
@@ -330,7 +371,6 @@ async def plan_node(state: DebateState) -> dict:
         await _notify_budget(budget, "plan", "planner")
         plans_content = response.content
 
-        # Check if both plans were generated — retry if only one
         import re as _re
         plan_headers = _re.findall(r"##\s*方案\s*[A-Za-z]", plans_content)
         if len(plan_headers) < 2:
@@ -348,6 +388,28 @@ async def plan_node(state: DebateState) -> dict:
             await budget.record("coder", retry_resp.tokens_used)
             if _re.findall(r"##\s*方案\s*[A-Za-z]", retry_resp.content).__len__() >= 2:
                 plans_content = retry_resp.content
+
+    return {
+        "plan_content": plans_content,
+        "plan_action": "pending",
+        "budget_spent": budget.spent,
+        "budget_by_agent": dict(budget.by_agent),
+        "budget_by_phase": dict(budget.by_phase),
+        "budget_cache_stats": dict(budget.cache_stats),
+    }
+
+
+async def plan_select_node(state: DebateState) -> dict:
+    """Present plans to user and collect selection via interrupt.
+
+    This node contains NO LLM call — only reads plan_content from state.
+    On LangGraph resume (after user selects), this node re-executes but
+    just reads the already-generated plans. The interrupt() call returns
+    the resume value immediately, so no duplicate plan_review fires.
+    """
+    plans_content = state.get("plan_content", "")
+    plan_round = state.get("plan_round", 0)
+    max_plan_rounds = 7
 
     await _notify({"type": "plan_proposal", "content": plans_content})
 
@@ -373,14 +435,9 @@ async def plan_node(state: DebateState) -> dict:
                 selected_plan = user_input.get("plan_content", plans_content)
             elif action == "chat":
                 return {
-                    "plan_content": plans_content,
                     "plan_round": plan_round + 1,
                     "plan_action": "chat",
                     "extra_context": user_input.get("message", ""),
-                    "budget_spent": budget.spent,
-                "budget_by_agent": dict(budget.by_agent),
-                "budget_by_phase": dict(budget.by_phase),
-                "budget_cache_stats": dict(budget.cache_stats),
                 }
 
     plan_msg = {
@@ -392,15 +449,9 @@ async def plan_node(state: DebateState) -> dict:
 
     return {
         "selected_plan": selected_plan,
-        "plan_content": plans_content,
         "plan_action": "done",
         "messages": [plan_msg],
-        "budget_spent": budget.spent,
-                "budget_by_agent": dict(budget.by_agent),
-                "budget_by_phase": dict(budget.by_phase),
-                "budget_cache_stats": dict(budget.cache_stats),
     }
-
 
 
 async def coder_node(state: DebateState) -> dict:
@@ -409,7 +460,7 @@ async def coder_node(state: DebateState) -> dict:
 
     if ctx.round == 1:
         await _notify({"type": "phase_change", "phase": "coding"})
-    await _notify({"type": "agent_start", "agent": "coder", "estimated_seconds": AGENT_ESTIMATED_SECONDS.get("coder", 60)})
+    await _notify({"type": "agent_start", "agent": "coder"})
 
     if ctx.round == 1:
         selected_plan = state.get("selected_plan", "")
@@ -421,7 +472,7 @@ async def coder_node(state: DebateState) -> dict:
                 "1. 必须是完整实现，不是 demo、stub、示例片段或 PoC\n"
                 "2. 必须包含需求中提到的所有核心功能（如认证、加密、数据库操作等）\n"
                 "3. 代码必须可以直接运行，包含所有 import 和必要的类/函数定义\n"
-                "4. 提交前用 run_code_snippet 自测确认能正常运行\n"
+                "4. "
             )
         else:
             prompt = (
@@ -429,7 +480,7 @@ async def coder_node(state: DebateState) -> dict:
                 "严格要求：\n"
                 "1. 必须是完整实现，不是 demo 或示例片段\n"
                 "2. 包含所有核心功能、import 和类/函数定义\n"
-                "3. 提交前用 run_code_snippet 自测确认能正常运行\n"
+                "3. "
             )
         if ctx.extra_context:
             prompt += f"\n\n补充需求：{ctx.extra_context}"
@@ -457,17 +508,19 @@ async def coder_node(state: DebateState) -> dict:
                     finding_list_lines.append(f"  {fid}: [{sev}] {cat} — {desc[:120]}")
                     fix_descriptions.append(desc)
 
+        selected_plan = state.get("selected_plan", "")
         prompt = (
             "请逐条回应上一轮 Attacker 提出的问题。\n"
             "对每个攻击：如果合理 → accept_and_fix 并修复代码；如果不合理 → rebut_with_evidence 并给出证据。\n\n"
         )
+        if selected_plan:
+            prompt += f"确认的方案（修复时不要偏离方案方向）：\n{selected_plan}\n\n"
         if finding_list_lines:
             prompt += "需要回应的问题（finding_ref 必须使用下面的 ID，如 SECURITY-001）：\n"
             prompt += "\n".join(finding_list_lines)
             prompt += "\n\n"
         prompt += (
             "修复后必须通过 updated_code 提交**完整的**新版代码（在上一版基础上修改，不要重写或提交测试脚本）。\n"
-            "提交前请用 run_code_snippet 自测修复后的代码。"
         )
         if current:
             prompt += f"\n\n你当前的完整代码如下（在此基础上修改）：\n```\n{current}\n```"
@@ -480,44 +533,14 @@ async def coder_node(state: DebateState) -> dict:
                     prompt += f"\n\n历史修复参考（{desc[:40]}）：\n" + "\n".join(fixes[:2])
 
     start = time.monotonic()
-    prev_code = state.get("current_code", "")
-    try:
-        set_stream_callback(_make_stream_cb("coder"))
-        response = await coder_agent.speak(ctx, prompt, budget)
-        set_stream_callback(None)
-    except Exception as e:
-        set_stream_callback(None)
-        logger.warning("coder_node_api_failed round=%d error=%s, retrying once", ctx.round, e)
-        await _notify({"type": "agent_error", "agent": "coder", "error": str(e)[:200], "is_proxy_error": True})
-        try:
-            await asyncio.sleep(2)
-            set_stream_callback(_make_stream_cb("coder"))
-            response = await coder_agent.speak(ctx, prompt, budget)
-            set_stream_callback(None)
-        except Exception as e2:
-            set_stream_callback(None)
-            logger.error("coder_node_retry_failed round=%d error=%s", ctx.round, e2)
-            await _notify({"type": "stream_end", "agent": "coder"})
-            fallback_msg = {
-                "agent": "coder",
-                "content": f"[API 调用失败] Coder 暂时无法响应: {str(e2)[:100]}",
-                "round": ctx.round,
-                "code": prev_code or None,
-            }
-            await _notify({"type": "message", **fallback_msg})
-            return {
-                "round": ctx.round,
-                "current_code": prev_code,
-                "messages": [fallback_msg],
-                "budget_spent": budget.spent,
-                "budget_by_agent": dict(budget.by_agent),
-                "budget_by_phase": dict(budget.by_phase),
-                "budget_cache_stats": dict(budget.cache_stats),
-            }
+    set_stream_callback(_make_stream_cb("coder"))
+    response = await coder_agent.speak(ctx, prompt, budget)
+    set_stream_callback(None)
     record_agent_call("coder", response.tokens_used, time.monotonic() - start)
     await _notify_budget(budget, "code_gen" if ctx.round == 1 else "debate", "coder")
 
     # --- Code quality gate: reject demo/stub/test scripts ---
+    prev_code = state.get("current_code", "")
     new_code = response.code or ""
     MIN_FIRST_CODE_LEN = 200
 
@@ -538,41 +561,7 @@ async def coder_node(state: DebateState) -> dict:
                         ctx.round, len(prev_code), len(new_code))
         new_code = prev_code
 
-    # Syntax validation: if code has SyntaxError, ask Coder to fix indentation
-    if new_code and len(new_code) > 50:
-        try:
-            compile(new_code, "<coder_output>", "exec")
-        except SyntaxError as syn_err:
-            logger.warning("coder_code_syntax_error round=%d line=%s: %s",
-                           ctx.round, syn_err.lineno, syn_err.msg)
-            if budget.remaining() > 5000:
-                fix_indent_prompt = (
-                    f"你提交的代码有语法错误（第 {syn_err.lineno} 行：{syn_err.msg}）。\n"
-                    "最常见的原因是 Python 缩进不正确——if/for/def/class 后面的代码块必须缩进 4 个空格。\n"
-                    "请修复缩进后重新提交完整代码。"
-                )
-                set_stream_callback(_make_stream_cb("coder"))
-                fix_resp = await coder_agent.speak(ctx, fix_indent_prompt, budget)
-                set_stream_callback(None)
-                if fix_resp.code:
-                    try:
-                        compile(fix_resp.code, "<coder_fix>", "exec")
-                        new_code = fix_resp.code
-                        logger.info("coder_syntax_fixed round=%d new_len=%d", ctx.round, len(new_code))
-                    except SyntaxError:
-                        if prev_code:
-                            new_code = prev_code
-
     await _notify({"type": "stream_end", "agent": "coder"})
-    elapsed_s = round(time.monotonic() - start, 1)
-    has_code = bool(new_code and len(new_code) > 50)
-    await _notify({
-        "type": "agent_done",
-        "agent": "coder",
-        "elapsed_seconds": elapsed_s,
-        "has_code": has_code,
-        "code_lines": len(new_code.split("\n")) if new_code else 0,
-    })
     new_msg = {
         "agent": "coder",
         "content": response.content,
@@ -600,7 +589,7 @@ async def _attacker_node(
     if agent_name in state.get("skip_list", []):
         return {}
 
-    await _notify({"type": "agent_start", "agent": agent_name, "estimated_seconds": AGENT_ESTIMATED_SECONDS.get(agent_name, 60)})
+    await _notify({"type": "agent_start", "agent": agent_name})
     ctx, budget = _build_context(state)
 
     current_code = state.get("current_code", "")
@@ -663,17 +652,6 @@ async def _attacker_node(
                         f["line_start"] = ln_idx + 1
                         f["line_end"] = f.get("line_end") or (ln_idx + 1)
                         break
-
-        findings_count = len(structured.get("findings", []))
-        stance = structured.get("stance", "unknown")
-        elapsed_s = round(time.monotonic() - start, 1)
-        await _notify({
-            "type": "agent_done",
-            "agent": agent_name,
-            "elapsed_seconds": elapsed_s,
-            "stance": stance,
-            "findings_count": findings_count,
-        })
 
         new_msg = {
             "agent": agent_name,
@@ -1037,22 +1015,7 @@ async def arbitration_node(state: DebateState) -> dict:
         "content": f"辩论未收敛，Arbitrator 正在仲裁 {len(disputes)} 条争议...",
     })
 
-    try:
-        arbitration_result = await arbitrator_agent.arbitrate(ctx, budget, disputes)
-    except Exception as e:
-        logger.warning("arbitration_node_api_failed error=%s, retrying once", e)
-        await _notify({"type": "agent_error", "agent": "arbitrator", "error": str(e)[:200], "is_proxy_error": True})
-        try:
-            await asyncio.sleep(2)
-            arbitration_result = await arbitrator_agent.arbitrate(ctx, budget, disputes)
-        except Exception as e2:
-            logger.error("arbitration_node_retry_failed error=%s, delivering as-is", e2)
-            return {
-                "converged": True,
-                "convergence_reason": f"仲裁 API 失败（{str(e2)[:60]}），以当前代码交付",
-                "arbitration_result": {},
-                "must_fix_items": [],
-            }
+    arbitration_result = await arbitrator_agent.arbitrate(ctx, budget, disputes)
     await _notify_budget(budget, "arbitration", "arbitrator")
 
     await _notify({
@@ -1087,34 +1050,12 @@ async def arbitration_node(state: DebateState) -> dict:
     rulings = arbitration_result.get("rulings", [])
     must_fix = [r for r in rulings if r.get("verdict") == "must_fix"]
 
-    ruling_lines = []
-    for r in rulings:
-        verdict = r.get("verdict", "?")
-        severity = r.get("re_assessed_severity", "?")
-        reasoning = r.get("reasoning", "")
-        ruling_lines.append(f"- [{severity}] {verdict}: {reasoning}")
-    summary = arbitration_result.get("summary", "")
-    arb_content = (
-        f"## 仲裁结果：{overall}\n\n"
-        f"{summary}\n\n"
-        f"### 逐条裁决（{len(rulings)} 条）\n\n"
-        + "\n".join(ruling_lines)
-    )
-    arb_msg = {
-        "agent": "arbitrator",
-        "content": arb_content,
-        "round": state.get("round", 0),
-        "structured": arbitration_result,
-    }
-    await _notify({"type": "message", **arb_msg})
-
     if overall == "deliverable" or not must_fix:
         return {
             "converged": True,
             "convergence_reason": f"仲裁裁决：代码可交付（{len(disputes)} 条争议已裁决）",
             "arbitration_result": arbitration_result,
             "must_fix_items": [],
-            "messages": [arb_msg],
         }
 
     if overall == "fix_then_deliver" and len(must_fix) <= 3:
@@ -1127,7 +1068,6 @@ async def arbitration_node(state: DebateState) -> dict:
                 "convergence_reason": "仲裁裁决：需修复后交付",
                 "arbitration_result": arbitration_result,
                 "must_fix_items": must_fix,
-                "messages": [arb_msg],
             }
 
     return {
@@ -1135,7 +1075,6 @@ async def arbitration_node(state: DebateState) -> dict:
         "convergence_reason": "仲裁裁决：建议人工审查",
         "arbitration_result": arbitration_result,
         "must_fix_items": [],
-        "messages": [arb_msg],
     }
 
 
@@ -1171,7 +1110,7 @@ async def final_fix_node(state: DebateState) -> dict:
     fix_prompt = (
         f"仲裁裁决要求你修复以下 {len(must_fix_items)} 个问题。\n"
         f"只修复这些具体问题，不要做其他改动。\n"
-        f"提交前请用 run_code_snippet 自测修复后的代码。\n\n"
+        f"\n\n"
         f"{fix_list}"
     )
     if fix_refs:
@@ -1192,7 +1131,7 @@ async def final_fix_node(state: DebateState) -> dict:
             f"前一次修复失败了。请从不同角度考虑：\n"
             f"策略：{STRATEGY_ANGLES[strategy_idx % len(STRATEGY_ANGLES)]}\n\n"
             f"原始问题：\n{fix_list}\n\n"
-            f"提交前请用 run_code_snippet 自测修复后的代码。"
+            f""
         )
 
         if attempt > 0 and state.get("enable_interrupt"):
@@ -1207,46 +1146,26 @@ async def final_fix_node(state: DebateState) -> dict:
                     current_prompt = (
                         f"用户建议的修复思路：{user_response.get('message', '')}\n\n"
                         f"原始问题：\n{fix_list}\n\n"
-                        f"请按用户思路修复，提交前用 run_code_snippet 自测。"
+                        f"请按用户思路修复，"
                     )
 
         await _notify({"type": "agent_start", "agent": "coder"})
         await _notify({"type": "fix_progress", "attempt": attempt + 1, "max_attempts": 3})
 
         start = time.monotonic()
-        try:
-            response = await coder_agent.speak(ctx, current_prompt, budget)
-        except Exception as e:
-            logger.warning("final_fix_coder_failed attempt=%d error=%s", attempt + 1, e)
-            await _notify({"type": "agent_error", "agent": "coder", "error": str(e)[:200], "is_proxy_error": True})
-            strategy_idx += 1
-            continue
+        response = await coder_agent.speak(ctx, current_prompt, budget)
         record_agent_call("coder", response.tokens_used, time.monotonic() - start)
         await _notify_budget(budget, "arbitration", "coder")
 
         if response.code:
-            candidate = response.code
-            use_candidate = True
-            if new_code and len(candidate) < len(new_code) * 0.3:
-                logger.warning("final_fix_code_regressed prev=%d new=%d, keeping prev",
-                               len(new_code), len(candidate))
-                use_candidate = False
-            if use_candidate:
-                try:
-                    compile(candidate, "<final_fix>", "exec")
-                except SyntaxError:
-                    logger.warning("final_fix_code_syntax_error, keeping prev (%d chars)",
-                                   len(new_code))
-                    use_candidate = False
-            if use_candidate:
-                new_code = candidate
-                ctx.current_code = new_code
+            new_code = response.code
+            ctx.current_code = new_code
 
         fix_msg = {
             "agent": "coder",
             "content": f"[修复 attempt {attempt+1}] {response.content}",
             "round": state["round"] + 1,
-            "code": new_code,
+            "code": response.code,
             "structured": response.structured,
         }
         await _notify({"type": "message", **fix_msg})
@@ -1264,11 +1183,7 @@ async def final_fix_node(state: DebateState) -> dict:
     })
 
     ctx.current_code = new_code
-    try:
-        reviews = await arbitrator_agent.review_fixes(ctx, budget, must_fix_items)
-    except Exception as e:
-        logger.warning("final_fix_review_failed error=%s, skipping review", e)
-        reviews = []
+    reviews = await arbitrator_agent.review_fixes(ctx, budget, must_fix_items)
     await _notify_budget(budget, "arbitration", "arbitrator")
 
     not_fixed = [r for r in reviews if r.get("status") != "fixed"]
@@ -1286,24 +1201,11 @@ async def final_fix_node(state: DebateState) -> dict:
         refix_prompt = (
             f"Arbitrator 复核发现以下 {len(not_fixed)} 项未正确修复：\n"
             f"{not_fixed_desc}\n"
-            f"请针对性修复，提交前用 run_code_snippet 自测。"
+            f"请针对性修复，"
         )
 
         start = time.monotonic()
-        try:
-            refix_response = await coder_agent.speak(ctx, refix_prompt, budget)
-        except Exception as e:
-            logger.warning("final_fix_refix_failed error=%s, delivering current code", e)
-            return {
-                "current_code": new_code,
-                "messages": all_fix_msgs,
-                "budget_spent": budget.spent,
-                "budget_by_agent": dict(budget.by_agent),
-                "budget_by_phase": dict(budget.by_phase),
-                "budget_cache_stats": dict(budget.cache_stats),
-                "converged": True,
-                "convergence_reason": "仲裁后修复完成（补修 API 失败，使用当前版本）",
-            }
+        refix_response = await coder_agent.speak(ctx, refix_prompt, budget)
         record_agent_call("coder", refix_response.tokens_used, time.monotonic() - start)
         await _notify_budget(budget, "arbitration", "coder")
 
@@ -1349,23 +1251,9 @@ async def judge_node(state: DebateState) -> dict:
     await _notify({"type": "agent_start", "agent": "judge"})
 
     start = time.monotonic()
-    report = None
-    try:
-        set_stream_callback(_make_stream_cb("judge"))
-        report = await judge_agent.summarize(ctx, budget)
-        set_stream_callback(None)
-    except Exception as e:
-        set_stream_callback(None)
-        logger.warning("judge_node_api_failed error=%s, retrying once", e)
-        await _notify({"type": "agent_error", "agent": "judge", "error": str(e)[:200], "is_proxy_error": True})
-        try:
-            await asyncio.sleep(2)
-            set_stream_callback(_make_stream_cb("judge"))
-            report = await judge_agent.summarize(ctx, budget)
-            set_stream_callback(None)
-        except Exception as e2:
-            set_stream_callback(None)
-            logger.error("judge_node_retry_failed error=%s, using fallback", e2)
+    set_stream_callback(_make_stream_cb("judge"))
+    report = await judge_agent.summarize(ctx, budget)
+    set_stream_callback(None)
     record_agent_call("judge", budget.by_agent.get("judge", 0), time.monotonic() - start)
     await _notify({"type": "stream_end", "agent": "judge"})
     await _notify_budget(budget, "judge", "judge")
@@ -1406,85 +1294,207 @@ async def judge_node(state: DebateState) -> dict:
     }
 
 
-# ─── Post-Judge patch application (replaces resolution loop) ─────────────
+# ─── Resolution loop nodes ────────────────────────────────────────────────
+
+MAX_RESOLUTION_RETRIES = 2
+RETRY_BUDGET_RESERVE = 0.15
 
 
-async def apply_patches_node(state: DebateState) -> dict:
-    """Apply Judge's machine-readable patches to code, then update the report."""
-    code = state.get("current_code", "")
+async def resolution_check_node(state: DebateState) -> dict:
+    """Check if Judge found unresolved issues. Route to retry, user decision, or done."""
     judge_report = state.get("judge_report", {})
     unresolved = judge_report.get("unresolved_issues", [])
+    retry_count = state.get("retry_count", 0)
 
-    if not code or not unresolved:
-        return {}
+    if not unresolved:
+        await _notify({
+            "type": "status",
+            "content": "所有问题已解决，交付完成代码。",
+        })
+        return {"user_decision": "all_resolved"}
 
-    lines = code.split("\n")
-    applied_issues = []
-    remaining_issues = []
+    budget_total = state.get("budget_total", 100_000)
+    budget_spent = state.get("budget_spent", 0)
+    budget_remaining_ratio = (budget_total - budget_spent) / max(budget_total, 1)
+    has_budget = budget_remaining_ratio > RETRY_BUDGET_RESERVE
+    can_retry = retry_count < MAX_RESOLUTION_RETRIES and has_budget
 
-    for issue in unresolved:
-        if not isinstance(issue, dict):
-            remaining_issues.append(issue)
-            continue
+    if can_retry:
+        await _notify({
+            "type": "status",
+            "content": (
+                f"Judge 发现 {len(unresolved)} 个未解决问题，"
+                f"自动进入聚焦修复（第 {retry_count + 1}/{MAX_RESOLUTION_RETRIES} 次）..."
+            ),
+        })
+        return {"user_decision": "auto_retry"}
 
-        patches = issue.get("patches", [])
-        if not patches or not isinstance(patches, list):
-            remaining_issues.append(issue)
-            continue
-
-        all_applied = True
-        for patch in patches:
-            if not isinstance(patch, dict):
-                all_applied = False
-                break
-            line_num = patch.get("line", 0)
-            find_text = patch.get("find", "")
-            replace_text = patch.get("replace", "")
-            if not find_text or not line_num:
-                all_applied = False
-                break
-            idx = line_num - 1
-            if 0 <= idx < len(lines) and find_text in lines[idx]:
-                lines[idx] = lines[idx].replace(find_text, replace_text, 1)
-            else:
-                all_applied = False
-                break
-
-        if all_applied:
-            applied_issues.append(issue.get("issue", ""))
-        else:
-            remaining_issues.append(issue)
-
-    if not applied_issues:
-        return {}
-
-    new_code = "\n".join(lines)
-
-    try:
-        compile(new_code, "<patched>", "exec")
-    except SyntaxError:
-        logger.warning("apply_patches_syntax_error, reverting all patches")
-        return {}
-
-    # Update judge report: move patched issues to resolved
-    resolved = list(judge_report.get("resolved_issues", []))
-    resolved.extend(applied_issues)
-
-    updated_report = dict(judge_report)
-    updated_report["resolved_issues"] = resolved
-    updated_report["unresolved_issues"] = remaining_issues
-
-    logger.info("apply_patches applied=%d remaining=%d",
-                len(applied_issues), len(remaining_issues))
     await _notify({
         "type": "status",
-        "content": f"自动修复了 {len(applied_issues)} 个问题",
+        "content": (
+            f"仍有 {len(unresolved)} 个未解决问题，"
+            f"{'重试次数已用完' if retry_count >= MAX_RESOLUTION_RETRIES else '预算不足'}。"
+        ),
     })
+    return {"user_decision": "needs_user_decision"}
+
+
+def _resolution_check_edge(state: DebateState) -> str:
+    decision = state.get("user_decision", "all_resolved")
+    if decision == "all_resolved":
+        return "done"
+    if decision == "auto_retry":
+        return "focused_retry"
+    return "user_decision"
+
+
+async def focused_retry_node(state: DebateState) -> dict:
+    """Targeted fix for unresolved issues — only relevant attackers verify."""
+    ctx, budget = _build_context(state)
+    judge_report = state.get("judge_report", {})
+    unresolved = judge_report.get("unresolved_issues", [])
+    retry_count = state.get("retry_count", 0)
+
+    await _notify({"type": "phase_change", "phase": "fixing"})
+
+    # Build focused fix prompt from unresolved issues
+    issue_list = "\n".join(
+        f"{i+1}. {item.get('issue', '')} — 当前状态: {item.get('current_status', '?')} "
+        f"(影响: {item.get('impact', '?')})"
+        for i, item in enumerate(unresolved)
+    )
+
+    fix_prompt = (
+        f"Judge 评审发现以下 {len(unresolved)} 个问题仍未解决。\n"
+        f"请只针对这些问题修复，不要改动其他部分。\n"
+        f"\n\n"
+        f"{issue_list}"
+    )
+
+    await _notify({"type": "agent_start", "agent": "coder"})
+    start = time.monotonic()
+    response = await coder_agent.speak(ctx, fix_prompt, budget)
+    record_agent_call("coder", response.tokens_used, time.monotonic() - start)
+    await _notify_budget(budget, "debate", "coder")
+
+    new_code = response.code or state.get("current_code", "")
+    fix_msg = {
+        "agent": "coder",
+        "content": f"[聚焦修复 retry {retry_count + 1}] {response.content}",
+        "round": state["round"] + 1,
+        "code": response.code,
+        "structured": response.structured,
+    }
+    await _notify({"type": "message", **fix_msg})
+
+    # Determine which attackers need to verify (based on unresolved issue categories)
+    categories_needed = set()
+    for item in unresolved:
+        issue_text = (item.get("issue", "") + item.get("suggestion", "")).lower()
+        if any(kw in issue_text for kw in ("安全", "注入", "xss", "认证", "密码", "加密", "security")):
+            categories_needed.add("security")
+        if any(kw in issue_text for kw in ("性能", "复杂度", "内存", "缓存", "performance", "o(n")):
+            categories_needed.add("performance")
+        if any(kw in issue_text for kw in ("边界", "空", "null", "并发", "逻辑", "correctness")):
+            categories_needed.add("correctness")
+
+    if not categories_needed:
+        categories_needed = {"correctness"}
+
+    # Run only relevant attackers for verification
+    verify_state = {**state, "current_code": new_code, "round": state["round"] + 1}
+    agents_map = {
+        "security": (security_agent, "security"),
+        "performance": (performance_agent, "performance"),
+        "correctness": (correctness_agent, "correctness"),
+    }
+
+    verify_msgs = [fix_msg]
+
+    async def verify_with_attacker(name, agent_instance):
+        verify_prompt = (
+            f"Coder 刚刚修复了以下问题，请验证修复是否有效：\n{issue_list}\n\n"
+            f"如果问题已解决，stance 设为 satisfied。如果仍有问题，指出。"
+        )
+        try:
+            await _notify({"type": "agent_start", "agent": name})
+            s = time.monotonic()
+            resp = await agent_instance.speak(ctx, verify_prompt, budget)
+            record_agent_call(name, resp.tokens_used, time.monotonic() - s)
+            return {
+                "agent": name,
+                "content": f"[聚焦验证] {resp.content}",
+                "round": state["round"] + 1,
+                "structured": resp.structured,
+            }
+        except Exception as e:
+            logger.warning("focused_verify_%s_failed error=%s", name, e)
+            return None
+
+    verify_results = await asyncio.gather(*[
+        verify_with_attacker(name, agents_map[name][0])
+        for name in categories_needed
+        if name in agents_map
+    ])
+
+    for msg in verify_results:
+        if msg:
+            verify_msgs.append(msg)
+            await _notify({"type": "message", **msg})
 
     return {
         "current_code": new_code,
-        "judge_report": updated_report,
+        "messages": verify_msgs,
+        "budget_spent": budget.spent,
+                "budget_by_agent": dict(budget.by_agent),
+                "budget_by_phase": dict(budget.by_phase),
+                "budget_cache_stats": dict(budget.cache_stats),
+        "retry_count": retry_count + 1,
+        "judge_report": {},
     }
+
+
+async def user_decision_node(state: DebateState) -> dict:
+    """When retries exhausted, let user decide: accept, retry with context, or stop."""
+    judge_report = state.get("judge_report", {})
+    unresolved = judge_report.get("unresolved_issues", [])
+
+    await _notify({"type": "phase_change", "phase": "user_decision"})
+
+    if state.get("enable_interrupt"):
+        user_input = interrupt({
+            "type": "resolution_decision",
+            "unresolved_issues": unresolved,
+            "retry_count": state.get("retry_count", 0),
+            "options": [
+                {"action": "accept", "label": "接受当前结果"},
+                {"action": "retry_with_context", "label": "补充上下文后重试"},
+                {"action": "stop", "label": "停止，手动修复"},
+            ],
+        })
+
+        if user_input and isinstance(user_input, dict):
+            action = user_input.get("action", "accept")
+
+            if action == "retry_with_context":
+                extra = user_input.get("context", "")
+                return {
+                    "extra_context": extra,
+                    "user_decision": "auto_retry",
+                    "retry_count": state.get("retry_count", 0),
+                }
+
+            if action == "stop":
+                return {"user_decision": "user_stopped"}
+
+    return {"user_decision": "user_accepted"}
+
+
+def _user_decision_edge(state: DebateState) -> str:
+    decision = state.get("user_decision", "user_accepted")
+    if decision == "auto_retry":
+        return "focused_retry"
+    return "done"
 
 
 # ─── Graph builder ──────────────────────────────────────────────────────────
@@ -1495,7 +1505,9 @@ _compiled_graph = None
 def build_debate_graph():
     graph = StateGraph(DebateState)
 
-    graph.add_node("plan", plan_node)
+    graph.add_node("req_confirm", req_confirm_node)
+    graph.add_node("plan_generate", plan_generate_node)
+    graph.add_node("plan_select", plan_select_node)
     graph.add_node("coder", coder_node)
     graph.add_node("security", security_node)
     graph.add_node("performance", performance_node)
@@ -1504,16 +1516,21 @@ def build_debate_graph():
     graph.add_node("arbitration", arbitration_node)
     graph.add_node("final_fix", final_fix_node)
     graph.add_node("judge", judge_node)
-    graph.add_node("apply_patches", apply_patches_node)
+    graph.add_node("resolution_check", resolution_check_node)
+    graph.add_node("focused_retry", focused_retry_node)
+    graph.add_node("user_decision", user_decision_node)
 
-    graph.set_entry_point("plan")
+    graph.set_entry_point("req_confirm")
 
-    def _plan_edge(state: DebateState) -> str:
+    graph.add_edge("req_confirm", "plan_generate")
+    graph.add_edge("plan_generate", "plan_select")
+
+    def _plan_select_edge(state: DebateState) -> str:
         if state.get("plan_action") == "chat":
-            return "plan"
+            return "plan_generate"
         return "coder"
 
-    graph.add_conditional_edges("plan", _plan_edge, {"plan": "plan", "coder": "coder"})
+    graph.add_conditional_edges("plan_select", _plan_select_edge, {"plan_generate": "plan_generate", "coder": "coder"})
 
     graph.add_edge("coder", "security")
     graph.add_edge("coder", "performance")
@@ -1544,8 +1561,29 @@ def build_debate_graph():
 
     graph.add_edge("final_fix", "judge")
 
-    graph.add_edge("judge", "apply_patches")
-    graph.add_edge("apply_patches", END)
+    # Resolution loop: judge → resolution_check → (retry → judge | user_decision | done)
+    graph.add_edge("judge", "resolution_check")
+
+    graph.add_conditional_edges(
+        "resolution_check",
+        _resolution_check_edge,
+        {
+            "done": END,
+            "focused_retry": "focused_retry",
+            "user_decision": "user_decision",
+        },
+    )
+
+    graph.add_edge("focused_retry", "judge")
+
+    graph.add_conditional_edges(
+        "user_decision",
+        _user_decision_edge,
+        {
+            "focused_retry": "focused_retry",
+            "done": END,
+        },
+    )
 
     return graph
 
