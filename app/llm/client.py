@@ -154,17 +154,6 @@ CODER_TOOLS = [
             "required": ["code", "expected"],
         },
     },
-    {
-        "name": "check_documentation",
-        "description": "查询框架/库的官方文档，验证某个 API 的行为",
-        "input_schema": {
-            "type": "object",
-            "properties": {
-                "query": {"type": "string", "description": "要查询的内容"},
-            },
-            "required": ["query"],
-        },
-    },
 ]
 
 
@@ -191,6 +180,21 @@ class AgentResponse:
         self.cache_creation = cache_creation
         self.latency_ms = latency_ms
 
+
+
+AGENT_TEMPERATURE = {
+    "coder": 0.3,
+    "planner": 0.5,
+    "security": 0.7,
+    "performance": 0.7,
+    "correctness": 0.7,
+    "judge": 0.3,
+    "arbitrator": 0.4,
+    "cross_review": 0.5,
+    "compressor": 0.2,
+    "requirement_parser": 0.3,
+    "test_generator": 0.3,
+}
 
 
 # ─── Backend 2: Anthropic SDK (direct API) ───────────────────────────────────
@@ -267,12 +271,6 @@ async def _execute_coder_tool(tool_name: str, tool_input: dict) -> str:
     if tool_name == "run_code_snippet":
         return await _run_code_snippet(
             tool_input.get("code", ""), tool_input.get("expected", "")
-        )
-    elif tool_name == "check_documentation":
-        return (
-            f"Documentation query: {tool_input.get('query', '')}\n"
-            "Please verify this based on your knowledge of the framework/library. "
-            "If uncertain, note the uncertainty in your response."
         )
     return f"Unknown tool: {tool_name}"
 
@@ -357,6 +355,7 @@ async def _call_anthropic_api(
     total_tokens = 0
     total_cache_read = 0
     total_cache_creation = 0
+    temperature = AGENT_TEMPERATURE.get(agent, 0.5)
 
     start = time.monotonic()
     max_tool_turns = 3
@@ -381,6 +380,7 @@ async def _call_anthropic_api(
                 tools=cached_tools,
                 tool_choice=effective_choice,
                 max_tokens=max_tokens,
+                temperature=temperature,
             ) as stream:
                 async for text in stream.text_stream:
                     await _emit_stream(text)
@@ -393,6 +393,7 @@ async def _call_anthropic_api(
                 tools=cached_tools,
                 tool_choice=effective_choice,
                 max_tokens=max_tokens,
+                temperature=temperature,
             )
 
         total_tokens += response.usage.input_tokens + response.usage.output_tokens
@@ -540,15 +541,17 @@ async def _call_anthropic_proxy(
     if cached_tools:
         cached_tools[-1] = {**cached_tools[-1], "cache_control": {"type": "ephemeral"}}
 
+    temperature = AGENT_TEMPERATURE.get(agent, 0.5)
+
     body: dict = {
         "model": resolved_model,
         "max_tokens": max_tokens,
         "system": system_blocks,
         "messages": messages,
+        "temperature": temperature,
     }
     if cached_tools:
         body["tools"] = cached_tools
-        body["thinking"] = {"type": "disabled"}
     if tool_choice:
         body["tool_choice"] = tool_choice
 

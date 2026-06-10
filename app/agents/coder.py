@@ -58,4 +58,4 @@ class CoderAgent(BaseAgent):
         return CODER_TOOLS
 
     def get_tool_choice(self) -> dict:
-        return {"type": "tool", "name": "submit_response"}
+        return {"type": "any"}
