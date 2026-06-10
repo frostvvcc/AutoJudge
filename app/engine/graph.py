@@ -244,6 +244,42 @@ PLAN_PHASE_PROMPT = """根据以下需求，设计恰好 2 个不同方向的实
 {extra_context}"""
 
 
+async def req_confirm_node(state: DebateState) -> dict:
+    """Present parsed requirements to user for confirmation via interrupt.
+
+    User can check/uncheck items and add supplements. The confirmed result
+    overwrites parsed_requirement in state — all downstream agents read
+    the user-confirmed version automatically.
+    """
+    parsed = state.get("parsed_requirement", {})
+    if not parsed or not state.get("enable_interrupt"):
+        return {}
+
+    await _notify({"type": "phase_change", "phase": "analysis"})
+
+    user_input = interrupt({
+        "type": "requirement_confirm",
+        "parsed_requirement": parsed,
+    })
+
+    if not user_input or not isinstance(user_input, dict):
+        return {}
+
+    confirmed = user_input.get("confirmed")
+    if confirmed and isinstance(confirmed, dict):
+        supplements = user_input.get("supplements", "")
+        if supplements:
+            existing = confirmed.get("functional") or []
+            for line in supplements.strip().split("\n"):
+                line = line.strip()
+                if line:
+                    existing.append(line)
+            confirmed["functional"] = existing
+        return {"parsed_requirement": confirmed}
+
+    return {}
+
+
 async def plan_generate_node(state: DebateState) -> dict:
     """Generate or adjust plans via LLM. No interrupt — stores result in state.
 
@@ -1469,6 +1505,7 @@ _compiled_graph = None
 def build_debate_graph():
     graph = StateGraph(DebateState)
 
+    graph.add_node("req_confirm", req_confirm_node)
     graph.add_node("plan_generate", plan_generate_node)
     graph.add_node("plan_select", plan_select_node)
     graph.add_node("coder", coder_node)
@@ -1483,8 +1520,9 @@ def build_debate_graph():
     graph.add_node("focused_retry", focused_retry_node)
     graph.add_node("user_decision", user_decision_node)
 
-    graph.set_entry_point("plan_generate")
+    graph.set_entry_point("req_confirm")
 
+    graph.add_edge("req_confirm", "plan_generate")
     graph.add_edge("plan_generate", "plan_select")
 
     def _plan_select_edge(state: DebateState) -> str:

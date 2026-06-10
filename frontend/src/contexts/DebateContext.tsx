@@ -382,7 +382,11 @@ export function DebateProvider({ children }: { children: ReactNode }) {
         const payload = (event as unknown as Record<string, unknown>).payload as InterruptData | undefined;
         if (!payload) break;
         const iType = payload.type;
-        if (iType === 'plan_review' || iType === 'resolution_decision') {
+        if (iType === 'requirement_confirm') {
+          setInterruptData(payload);
+          setCurrentPhase('analysis');
+          setStatusText('等待用户确认需求...');
+        } else if (iType === 'plan_review' || iType === 'resolution_decision') {
           setInterruptData(payload);
           if (iType === 'plan_review') {
             setCurrentPhase('plan');

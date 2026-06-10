@@ -48,6 +48,14 @@ export default function AttackResponsePanel({
 
   return (
     <div className="space-y-4">
+      {/* Requirement confirmation UI */}
+      {interruptData?.type === 'requirement_confirm' && (phaseView === 'analysis' || phaseView === 'all') && (
+        <RequirementConfirmCard
+          interruptData={interruptData}
+          onRespond={onRespondInterrupt}
+        />
+      )}
+
       {/* Plan selection UI */}
       {interruptData?.type === 'plan_review' && (phaseView === 'plan' || phaseView === 'all') && (
         <PlanInteractionCard
@@ -1050,6 +1058,137 @@ function ResolutionDecisionCard({
           className="w-full px-4 py-2.5 bg-white hover:bg-gray-50 border border-gray-200 text-sm text-gray-600 rounded-lg transition-colors"
         >
           停止，手动修复
+        </button>
+      </div>
+    </div>
+  );
+}
+
+
+function RequirementConfirmCard({
+  interruptData,
+  onRespond,
+}: {
+  interruptData: InterruptData;
+  onRespond: (response: Record<string, unknown>) => void;
+}) {
+  const parsed = (interruptData.parsed_requirement ?? {}) as Record<string, string[]>;
+  const categories = [
+    { key: 'functional', label: '功能点', icon: '📋' },
+    { key: 'constraints', label: '约束条件', icon: '📐' },
+    { key: 'implicit', label: '隐含需求', icon: '💡' },
+    { key: 'edge_cases', label: '边界场景', icon: '🎯' },
+  ];
+
+  const [checked, setChecked] = useState<Record<string, boolean[]>>(() => {
+    const init: Record<string, boolean[]> = {};
+    for (const cat of categories) {
+      const items = parsed[cat.key] ?? [];
+      init[cat.key] = items.map(() => true);
+    }
+    return init;
+  });
+  const [supplements, setSupplements] = useState('');
+
+  const toggle = (catKey: string, idx: number) => {
+    setChecked((prev) => {
+      const next = { ...prev };
+      next[catKey] = [...(next[catKey] ?? [])];
+      next[catKey][idx] = !next[catKey][idx];
+      return next;
+    });
+  };
+
+  const handleSubmit = () => {
+    const confirmed: Record<string, string[]> = {};
+    for (const cat of categories) {
+      const items = parsed[cat.key] ?? [];
+      confirmed[cat.key] = items.filter((_, i) => checked[cat.key]?.[i] !== false);
+    }
+    onRespond({ confirmed, supplements: supplements.trim() });
+  };
+
+  const totalItems = categories.reduce((n, c) => n + (parsed[c.key]?.length ?? 0), 0);
+  const checkedCount = Object.entries(checked).reduce(
+    (n, [, bools]) => n + bools.filter(Boolean).length, 0,
+  );
+
+  return (
+    <div className="rounded-xl border-2 border-indigo-300 bg-white p-5 space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <span className="text-xl">🧠</span>
+          <h3 className="text-sm font-bold text-indigo-700">确认需求分析</h3>
+          <span className="text-xs text-indigo-400">
+            勾选需要的、取消不需要的 · {checkedCount}/{totalItems} 项已选
+          </span>
+        </div>
+      </div>
+
+      {categories.map((cat) => {
+        const items = parsed[cat.key] ?? [];
+        if (items.length === 0) return null;
+        return (
+          <div key={cat.key} className="space-y-1.5">
+            <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600">
+              <span>{cat.icon}</span>
+              <span>{cat.label}</span>
+              <span className="text-gray-400">({items.length})</span>
+            </div>
+            <div className="space-y-1">
+              {items.map((item, i) => (
+                <label
+                  key={i}
+                  className={`flex items-start gap-2.5 px-3 py-2 rounded-lg border cursor-pointer transition-colors ${
+                    checked[cat.key]?.[i] !== false
+                      ? 'bg-indigo-50 border-indigo-200'
+                      : 'bg-gray-50 border-gray-200 opacity-60'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked[cat.key]?.[i] !== false}
+                    onChange={() => toggle(cat.key, i)}
+                    className="mt-0.5 rounded border-gray-300 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <span className={`text-xs leading-relaxed ${
+                    checked[cat.key]?.[i] !== false ? 'text-gray-700' : 'text-gray-400 line-through'
+                  }`}>
+                    {item}
+                  </span>
+                </label>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+
+      <div className="space-y-1.5">
+        <div className="flex items-center gap-1.5 text-xs font-semibold text-gray-600">
+          <span>✏️</span>
+          <span>补充需求（可选）</span>
+        </div>
+        <textarea
+          value={supplements}
+          onChange={(e) => setSupplements(e.target.value)}
+          placeholder="每行一条补充需求..."
+          rows={2}
+          className="w-full px-3 py-2 text-xs border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-400 resize-none"
+        />
+      </div>
+
+      <div className="flex gap-3 pt-2 border-t border-gray-100">
+        <button
+          onClick={handleSubmit}
+          className="flex-1 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-medium rounded-lg transition-colors"
+        >
+          确认需求 ({checkedCount} 项)
+        </button>
+        <button
+          onClick={() => onRespond({})}
+          className="px-4 py-2.5 bg-white hover:bg-gray-50 border border-gray-200 text-sm text-gray-600 rounded-lg transition-colors"
+        >
+          跳过，使用全部
         </button>
       </div>
     </div>
