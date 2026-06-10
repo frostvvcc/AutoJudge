@@ -73,7 +73,7 @@ export default function AttackResponsePanel({
       )}
 
       {/* Analysis card — show whenever data exists (not just during analysis phase) */}
-      {analysisData && (phaseView === 'analysis' || phaseView === 'plan' || phaseView === 'coding' || phaseView === 'all') && (
+      {analysisData && phaseView === 'analysis' && (
         <AnalysisCard data={analysisData} />
       )}
 
