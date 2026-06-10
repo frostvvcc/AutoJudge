@@ -141,9 +141,16 @@ class JudgeAgent:
     async def summarize(
         self, context: DebateContext, budget: BudgetManager
     ) -> dict:
+        def _format_message(m):
+            header = f"[Round {m.round}][{m.agent.upper()}]"
+            if m.agent == "coder" and m.code:
+                lines = len(m.code.splitlines())
+                size = len(m.code)
+                return f"{header} {m.content}\n[提交代码: {lines} 行, {size} 字节]"
+            return f"{header} {m.content}"
+
         transcript = "\n\n".join(
-            f"[Round {m.round}][{m.agent.upper()}] {m.content}"
-            for m in context.messages
+            _format_message(m) for m in context.messages
         )
 
         system_prompt = """你是 AutoJudge 的报告撰写者。你的读者不是程序员，是普通用户。
