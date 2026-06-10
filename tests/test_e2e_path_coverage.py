@@ -23,7 +23,8 @@ from app.engine.complexity_router import (
 )
 from app.engine.graph import (
     DebateState,
-    plan_node,
+    plan_generate_node,
+    plan_select_node,
     coder_node,
     security_node,
     performance_node,
@@ -133,7 +134,7 @@ def _coder_msg(round_num=1, code="print('hello')", responses=None):
 # ═════════════════════════════════════════════════════════════════
 
 class TestPlanPhase:
-    """Plan Phase: Coder generates 2 proposals, user picks one."""
+    """Plan Phase: plan_generate_node generates proposals, plan_select_node gets user choice."""
 
     @pytest.mark.asyncio
     async def test_plan_rest_api_mode_no_interrupt(self):
@@ -143,12 +144,20 @@ class TestPlanPhase:
              patch("app.engine.graph.record_agent_call"), \
              patch("app.engine.graph._notify", new_callable=AsyncMock):
             mock_call.return_value = _mock_response("planner", "方案A: 轻量级\n方案B: 生产级")
-            result = await plan_node(state)
+            gen_result = await plan_generate_node(state)
 
-        assert "selected_plan" in result
-        assert result["selected_plan"] != ""
-        assert len(result["messages"]) == 1
-        assert result["messages"][0]["agent"] == "coder"
+        assert gen_result["plan_content"] != ""
+        assert gen_result["plan_action"] == "pending"
+
+        state.update(gen_result)
+        with patch("app.engine.graph._notify", new_callable=AsyncMock):
+            select_result = await plan_select_node(state)
+
+        assert "selected_plan" in select_result
+        assert select_result["selected_plan"] != ""
+        assert select_result["plan_action"] == "done"
+        assert len(select_result["messages"]) == 1
+        assert select_result["messages"][0]["agent"] == "coder"
 
     @pytest.mark.asyncio
     async def test_plan_user_selects_plan(self):
@@ -156,13 +165,18 @@ class TestPlanPhase:
         state = _base_state(enable_interrupt=True)
         with patch("app.llm.client.call_agent") as mock_call, \
              patch("app.engine.graph.record_agent_call"), \
-             patch("app.engine.graph._notify", new_callable=AsyncMock), \
-             patch("app.engine.graph.interrupt") as mock_interrupt:
+             patch("app.engine.graph._notify", new_callable=AsyncMock):
             mock_call.return_value = _mock_response("planner", "方案A\n方案B")
-            mock_interrupt.return_value = {"action": "select", "plan_content": "方案A: 轻量级"}
-            result = await plan_node(state)
+            gen_result = await plan_generate_node(state)
 
-        assert result["selected_plan"] == "方案A: 轻量级"
+        state.update(gen_result)
+        with patch("app.engine.graph._notify", new_callable=AsyncMock), \
+             patch("app.engine.graph.interrupt") as mock_interrupt:
+            mock_interrupt.return_value = {"action": "select", "plan_content": "方案A: 轻量级"}
+            select_result = await plan_select_node(state)
+
+        assert select_result["selected_plan"] == "方案A: 轻量级"
+        assert select_result["plan_action"] == "done"
 
     @pytest.mark.asyncio
     async def test_plan_user_auto_select(self):
@@ -170,59 +184,87 @@ class TestPlanPhase:
         state = _base_state(enable_interrupt=True)
         with patch("app.llm.client.call_agent") as mock_call, \
              patch("app.engine.graph.record_agent_call"), \
-             patch("app.engine.graph._notify", new_callable=AsyncMock), \
-             patch("app.engine.graph.interrupt") as mock_interrupt:
+             patch("app.engine.graph._notify", new_callable=AsyncMock):
             mock_call.return_value = _mock_response("planner", "两个方案")
-            mock_interrupt.return_value = {"action": "auto_select"}
-            result = await plan_node(state)
+            gen_result = await plan_generate_node(state)
 
-        assert result["selected_plan"] == "两个方案"
+        state.update(gen_result)
+        with patch("app.engine.graph._notify", new_callable=AsyncMock), \
+             patch("app.engine.graph.interrupt") as mock_interrupt:
+            mock_interrupt.return_value = {"action": "auto_select"}
+            select_result = await plan_select_node(state)
+
+        assert select_result["selected_plan"] == "两个方案"
+        assert select_result["plan_action"] == "done"
 
     @pytest.mark.asyncio
-    async def test_plan_user_chat_then_select(self):
-        """User discusses via input box, then selects after Coder adjusts."""
+    async def test_plan_user_chat_returns_chat_action(self):
+        """User provides feedback — plan_select returns chat action for re-generation."""
         state = _base_state(enable_interrupt=True)
-        call_count = [0]
-
-        async def mock_speak(ctx, prompt, budget):
-            call_count[0] += 1
-            return _mock_response("coder", f"调整后方案v{call_count[0]}")
-
-        interrupt_returns = iter([
-            {"action": "chat", "message": "我不想用Redis"},
-            {"action": "select", "plan_content": "无Redis方案"},
-        ])
-
         with patch("app.llm.client.call_agent") as mock_call, \
              patch("app.engine.graph.record_agent_call"), \
-             patch("app.engine.graph._notify", new_callable=AsyncMock), \
-             patch("app.engine.graph.interrupt") as mock_interrupt, \
-             patch("app.engine.graph.coder_agent") as mock_coder:
+             patch("app.engine.graph._notify", new_callable=AsyncMock):
             mock_call.return_value = _mock_response("planner", "初始方案")
-            mock_interrupt.side_effect = lambda x: next(interrupt_returns)
-            mock_coder.speak = AsyncMock(side_effect=mock_speak)
-            result = await plan_node(state)
+            gen_result = await plan_generate_node(state)
 
-        assert result["selected_plan"] == "无Redis方案"
+        state.update(gen_result)
+        with patch("app.engine.graph._notify", new_callable=AsyncMock), \
+             patch("app.engine.graph.interrupt") as mock_interrupt:
+            mock_interrupt.return_value = {"action": "chat", "message": "我不想用Redis"}
+            select_result = await plan_select_node(state)
+
+        assert select_result["plan_action"] == "chat"
+        assert select_result["extra_context"] == "我不想用Redis"
+        assert select_result["plan_round"] == 1
+
+    @pytest.mark.asyncio
+    async def test_plan_chat_then_select_full_cycle(self):
+        """Full cycle: generate → select(chat) → generate(adjust) → select(confirm)."""
+        state = _base_state(enable_interrupt=True)
+
+        # Step 1: initial generation
+        with patch("app.llm.client.call_agent") as mock_call, \
+             patch("app.engine.graph.record_agent_call"), \
+             patch("app.engine.graph._notify", new_callable=AsyncMock):
+            mock_call.return_value = _mock_response("planner", "初始方案")
+            gen1 = await plan_generate_node(state)
+        state.update(gen1)
+
+        # Step 2: user chats
+        with patch("app.engine.graph._notify", new_callable=AsyncMock), \
+             patch("app.engine.graph.interrupt") as mock_interrupt:
+            mock_interrupt.return_value = {"action": "chat", "message": "不要Redis"}
+            sel1 = await plan_select_node(state)
+        state.update(sel1)
+        assert state["plan_action"] == "chat"
+
+        # Step 3: re-generation with feedback
+        with patch("app.engine.graph.record_agent_call"), \
+             patch("app.engine.graph._notify", new_callable=AsyncMock), \
+             patch("app.engine.graph.coder_agent") as mock_coder:
+            mock_coder.speak = AsyncMock(return_value=_mock_response("coder", "无Redis方案"))
+            gen2 = await plan_generate_node(state)
+        state.update(gen2)
+        assert state["plan_content"] == "无Redis方案"
+
+        # Step 4: user selects
+        with patch("app.engine.graph._notify", new_callable=AsyncMock), \
+             patch("app.engine.graph.interrupt") as mock_interrupt:
+            mock_interrupt.return_value = {"action": "select"}
+            sel2 = await plan_select_node(state)
+
+        assert sel2["plan_action"] == "done"
+        assert sel2["selected_plan"] == "无Redis方案"
 
     @pytest.mark.asyncio
     async def test_plan_hard_cutoff_at_round_7(self):
         """Anti-deadloop: auto-proceeds after 7 chat rounds."""
-        state = _base_state(enable_interrupt=True)
+        state = _base_state(enable_interrupt=True, plan_round=7)
+        state["plan_content"] = "已有方案"
+        with patch("app.engine.graph._notify", new_callable=AsyncMock):
+            result = await plan_select_node(state)
 
-        chat_responses = [{"action": "chat", "message": f"第{i}轮反馈"} for i in range(7)]
-        interrupt_returns = iter(chat_responses)
-
-        with patch("app.llm.client.call_agent") as mock_call, \
-             patch("app.engine.graph.record_agent_call"), \
-             patch("app.engine.graph._notify", new_callable=AsyncMock), \
-             patch("app.engine.graph.interrupt") as mock_interrupt, \
-             patch("app.engine.graph.coder_agent") as mock_coder:
-            mock_call.return_value = _mock_response("planner", "初始方案")
-            mock_interrupt.side_effect = lambda x: next(interrupt_returns, None)
-            mock_coder.speak = AsyncMock(return_value=_mock_response("coder", "更新方案"))
-            result = await plan_node(state)
-
+        assert result["plan_action"] == "done"
         assert result["selected_plan"] != ""
 
     @pytest.mark.asyncio
@@ -231,13 +273,18 @@ class TestPlanPhase:
         state = _base_state(enable_interrupt=True)
         with patch("app.llm.client.call_agent") as mock_call, \
              patch("app.engine.graph.record_agent_call"), \
-             patch("app.engine.graph._notify", new_callable=AsyncMock), \
-             patch("app.engine.graph.interrupt") as mock_interrupt:
+             patch("app.engine.graph._notify", new_callable=AsyncMock):
             mock_call.return_value = _mock_response("planner", "两个方案")
-            mock_interrupt.return_value = None
-            result = await plan_node(state)
+            gen_result = await plan_generate_node(state)
 
-        assert result["selected_plan"] != ""
+        state.update(gen_result)
+        with patch("app.engine.graph._notify", new_callable=AsyncMock), \
+             patch("app.engine.graph.interrupt") as mock_interrupt:
+            mock_interrupt.return_value = None
+            select_result = await plan_select_node(state)
+
+        assert select_result["selected_plan"] != ""
+        assert select_result["plan_action"] == "done"
 
 
 # ═════════════════════════════════════════════════════════════════
@@ -1031,7 +1078,7 @@ class TestGraphStructure:
         graph = build_debate_graph()
         node_names = set(graph.nodes.keys())
         expected = {
-            "plan", "coder", "security", "performance", "correctness",
+            "plan_generate", "plan_select", "coder", "security", "performance", "correctness",
             "cross_review", "arbitration", "final_fix", "judge",
         }
         assert expected.issubset(node_names)
@@ -1373,13 +1420,16 @@ class TestFullPath:
         Path: plan → coder → attackers(all satisfied) → cross_review
               → converged → judge
         """
-        # 1. Plan
+        # 1. Plan (generate + select)
         state = _base_state(enable_interrupt=False)
         with patch("app.llm.client.call_agent") as mc, \
              patch("app.engine.graph.record_agent_call"), \
              patch("app.engine.graph._notify", new_callable=AsyncMock):
             mc.return_value = _mock_response("planner", "方案")
-            plan_result = await plan_node(state)
+            gen_result = await plan_generate_node(state)
+        state.update(gen_result)
+        with patch("app.engine.graph._notify", new_callable=AsyncMock):
+            plan_result = await plan_select_node(state)
 
         state.update(plan_result)
 
@@ -1652,14 +1702,18 @@ class TestEdgeCases:
 
     @pytest.mark.asyncio
     async def test_plan_with_unknown_action_breaks_loop(self):
-        """Plan phase: unknown action type → breaks the loop."""
+        """Plan phase: unknown action type → auto-proceeds."""
         state = _base_state(enable_interrupt=True)
         with patch("app.llm.client.call_agent") as mc, \
              patch("app.engine.graph.record_agent_call"), \
-             patch("app.engine.graph._notify", new_callable=AsyncMock), \
-             patch("app.engine.graph.interrupt") as mock_interrupt:
+             patch("app.engine.graph._notify", new_callable=AsyncMock):
             mc.return_value = _mock_response("planner", "方案")
+            gen_result = await plan_generate_node(state)
+        state.update(gen_result)
+        with patch("app.engine.graph._notify", new_callable=AsyncMock), \
+             patch("app.engine.graph.interrupt") as mock_interrupt:
             mock_interrupt.return_value = {"action": "unknown_action"}
-            result = await plan_node(state)
+            result = await plan_select_node(state)
 
         assert result["selected_plan"] != ""
+        assert result["plan_action"] == "done"

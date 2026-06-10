@@ -244,17 +244,20 @@ PLAN_PHASE_PROMPT = """根据以下需求，设计恰好 2 个不同方向的实
 {extra_context}"""
 
 
-async def plan_node(state: DebateState) -> dict:
-    """Plan Phase: single interrupt per execution, state-driven iteration."""
+async def plan_generate_node(state: DebateState) -> dict:
+    """Generate or adjust plans via LLM. No interrupt — stores result in state.
+
+    Separated from plan_select_node so that on LangGraph resume (after user
+    confirms a plan), only the lightweight select node re-executes — the
+    expensive LLM call is NOT repeated, and no spurious second interrupt fires.
+    """
     ctx, budget = _build_context(state)
 
     from app.llm.model_router import get_model_for_agent
     from app.llm.client import call_agent
 
     plans_content = state.get("plan_content", "")
-    plan_round = state.get("plan_round", 0)
     plan_action = state.get("plan_action", "")
-    max_plan_rounds = 7
 
     if plan_action == "chat" and plans_content:
         await _notify({"type": "phase_change", "phase": "plan"})
@@ -269,7 +272,12 @@ async def plan_node(state: DebateState) -> dict:
         )
 
         start = time.monotonic()
-        response = await coder_agent.speak(ctx, adjust_prompt, budget)
+        try:
+            response = await coder_agent.speak(ctx, adjust_prompt, budget)
+        except Exception as e:
+            logger.warning("plan_generate_chat_failed error=%s, retrying", e)
+            await asyncio.sleep(2)
+            response = await coder_agent.speak(ctx, adjust_prompt, budget)
         record_agent_call("coder", response.tokens_used, time.monotonic() - start)
         await _notify_budget(budget, "plan", "coder")
         plans_content = response.content
@@ -290,19 +298,29 @@ async def plan_node(state: DebateState) -> dict:
             "不写代码，只说方案。每个方案说明技术选型、核心流程、安全考虑、不包含什么。"
         )
         messages = [{"role": "user", "content": prompt}]
-        response = await call_agent(
-            agent="planner",
-            system_prompt=system,
-            messages=messages,
-            model=get_model_for_agent("planner"),
-            max_tokens=await budget.get_max_tokens("coder"),
-        )
+        try:
+            response = await call_agent(
+                agent="planner",
+                system_prompt=system,
+                messages=messages,
+                model=get_model_for_agent("planner"),
+                max_tokens=await budget.get_max_tokens("coder"),
+            )
+        except Exception as e:
+            logger.warning("plan_generate_failed error=%s, retrying", e)
+            await asyncio.sleep(2)
+            response = await call_agent(
+                agent="planner",
+                system_prompt=system,
+                messages=messages,
+                model=get_model_for_agent("planner"),
+                max_tokens=await budget.get_max_tokens("coder"),
+            )
         await budget.record("coder", response.tokens_used)
         record_agent_call("coder", response.tokens_used, time.monotonic() - start)
         await _notify_budget(budget, "plan", "planner")
         plans_content = response.content
 
-        # Check if both plans were generated — retry if only one
         import re as _re
         plan_headers = _re.findall(r"##\s*方案\s*[A-Za-z]", plans_content)
         if len(plan_headers) < 2:
@@ -320,6 +338,28 @@ async def plan_node(state: DebateState) -> dict:
             await budget.record("coder", retry_resp.tokens_used)
             if _re.findall(r"##\s*方案\s*[A-Za-z]", retry_resp.content).__len__() >= 2:
                 plans_content = retry_resp.content
+
+    return {
+        "plan_content": plans_content,
+        "plan_action": "pending",
+        "budget_spent": budget.spent,
+        "budget_by_agent": dict(budget.by_agent),
+        "budget_by_phase": dict(budget.by_phase),
+        "budget_cache_stats": dict(budget.cache_stats),
+    }
+
+
+async def plan_select_node(state: DebateState) -> dict:
+    """Present plans to user and collect selection via interrupt.
+
+    This node contains NO LLM call — only reads plan_content from state.
+    On LangGraph resume (after user selects), this node re-executes but
+    just reads the already-generated plans. The interrupt() call returns
+    the resume value immediately, so no duplicate plan_review fires.
+    """
+    plans_content = state.get("plan_content", "")
+    plan_round = state.get("plan_round", 0)
+    max_plan_rounds = 7
 
     await _notify({"type": "plan_proposal", "content": plans_content})
 
@@ -345,14 +385,9 @@ async def plan_node(state: DebateState) -> dict:
                 selected_plan = user_input.get("plan_content", plans_content)
             elif action == "chat":
                 return {
-                    "plan_content": plans_content,
                     "plan_round": plan_round + 1,
                     "plan_action": "chat",
                     "extra_context": user_input.get("message", ""),
-                    "budget_spent": budget.spent,
-                "budget_by_agent": dict(budget.by_agent),
-                "budget_by_phase": dict(budget.by_phase),
-                "budget_cache_stats": dict(budget.cache_stats),
                 }
 
     plan_msg = {
@@ -364,15 +399,9 @@ async def plan_node(state: DebateState) -> dict:
 
     return {
         "selected_plan": selected_plan,
-        "plan_content": plans_content,
         "plan_action": "done",
         "messages": [plan_msg],
-        "budget_spent": budget.spent,
-                "budget_by_agent": dict(budget.by_agent),
-                "budget_by_phase": dict(budget.by_phase),
-                "budget_cache_stats": dict(budget.cache_stats),
     }
-
 
 
 async def coder_node(state: DebateState) -> dict:
@@ -1424,7 +1453,8 @@ _compiled_graph = None
 def build_debate_graph():
     graph = StateGraph(DebateState)
 
-    graph.add_node("plan", plan_node)
+    graph.add_node("plan_generate", plan_generate_node)
+    graph.add_node("plan_select", plan_select_node)
     graph.add_node("coder", coder_node)
     graph.add_node("security", security_node)
     graph.add_node("performance", performance_node)
@@ -1437,14 +1467,16 @@ def build_debate_graph():
     graph.add_node("focused_retry", focused_retry_node)
     graph.add_node("user_decision", user_decision_node)
 
-    graph.set_entry_point("plan")
+    graph.set_entry_point("plan_generate")
 
-    def _plan_edge(state: DebateState) -> str:
+    graph.add_edge("plan_generate", "plan_select")
+
+    def _plan_select_edge(state: DebateState) -> str:
         if state.get("plan_action") == "chat":
-            return "plan"
+            return "plan_generate"
         return "coder"
 
-    graph.add_conditional_edges("plan", _plan_edge, {"plan": "plan", "coder": "coder"})
+    graph.add_conditional_edges("plan_select", _plan_select_edge, {"plan_generate": "plan_generate", "coder": "coder"})
 
     graph.add_edge("coder", "security")
     graph.add_edge("coder", "performance")

@@ -382,7 +382,9 @@ export function DebateProvider({ children }: { children: ReactNode }) {
         const payload = (event as unknown as Record<string, unknown>).payload as InterruptData | undefined;
         if (!payload) break;
         const iType = payload.type;
-        if (iType === 'plan_review' || iType === 'resolution_decision') {
+        if (iType === 'plan_review' && planConfirmedRef.current) {
+          wsSendRef.current({ type: 'interrupt_response', data: { action: 'auto_select' } });
+        } else if (iType === 'plan_review' || iType === 'resolution_decision') {
           setInterruptData(payload);
           if (iType === 'plan_review') {
             setCurrentPhase('plan');
