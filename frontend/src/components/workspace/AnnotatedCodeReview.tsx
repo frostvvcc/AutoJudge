@@ -137,7 +137,7 @@ export default function AnnotatedCodeReview({
       const GAP = 6;
 
       annCards.forEach(card => {
-        const idx = parseInt(card.dataset.annIdx!);
+        void card.dataset.annIdx;
         const anchorLine = parseInt(card.dataset.anchor ?? '1');
         const lineEl = codeCol.querySelector(`[data-ln="${anchorLine}"]`);
         if (!lineEl) {

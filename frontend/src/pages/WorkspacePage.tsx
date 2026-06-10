@@ -275,7 +275,7 @@ export default function WorkspacePage() {
                     process_transparency: (replayData.metrics_json as Record<string, unknown>)?.process_transparency ?? {},
                     degradation_level: (replayData.metrics_json as Record<string, unknown>)?.degradation_level,
                   },
-                  debate: { total_rounds: replayData.total_rounds, transcript: [] },
+                  debate: { total_rounds: replayData.total_rounds, converged: replayData.converged, consensus_reason: replayData.convergence_reason ?? '', transcript: [] },
                   summary: replayData.summary_json as never,
                   risk_assessment: replayData.risk_json as never,
                   metrics: viewData.metrics as never,

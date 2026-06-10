@@ -656,7 +656,7 @@ function severityColor(severity?: string): string {
 }
 
 
-function CoderResponsesSection({
+export function CoderResponsesSection({
   coderMsgs,
   allMessages,
   currentRound,
