@@ -9,14 +9,6 @@ import AnalysisCard from './AnalysisCard';
 import AnnotatedCodeReview from './AnnotatedCodeReview';
 import type { InterruptData, AnalysisData } from '../../contexts/DebateContext';
 
-function safeFindings(raw: unknown): Array<Record<string, unknown>> {
-  if (Array.isArray(raw)) return raw;
-  if (typeof raw === 'string') {
-    try { const parsed = JSON.parse(raw); if (Array.isArray(parsed)) return parsed; } catch {}
-  }
-  return [];
-}
-
 interface Props {
   messages: DebateMessage[];
   currentRound: number;
@@ -80,8 +72,8 @@ export default function AttackResponsePanel({
         />
       )}
 
-      {/* Analysis card — only show in analysis phase view */}
-      {analysisData && (phaseView === 'analysis' || phaseView === 'all') && (
+      {/* Analysis card — show whenever data exists (not just during analysis phase) */}
+      {analysisData && phaseView === 'analysis' && (
         <AnalysisCard data={analysisData} />
       )}
 
@@ -199,7 +191,7 @@ export default function AttackResponsePanel({
                 const allFindings: Array<{ agent: string; category: string; severity: string; description: string; test_input?: string; line_start?: number; line_end?: number }> = [];
                 for (const m of allAttackerAndCrossMsgs) {
                   const s = m.structured as Record<string, unknown> | undefined;
-                  const findings = safeFindings(s?.findings);
+                  const findings = (s?.findings as Array<Record<string, unknown>>) ?? [];
                   for (const f of findings) {
                     allFindings.push({
                       agent: m.agent,
@@ -248,9 +240,7 @@ export default function AttackResponsePanel({
                     satisfiedEntries.push({ agent: m.agent, message: msg, anchorLine: prevFinding?.line_start });
                   }
                 }
-                const attackerAgentsInRound = new Set(attackerMsgs.map(m => m.agent));
-                const allAttackersPresent = attackerAgentsInRound.size >= 3;
-                const roundAllSatisfied = allAttackersPresent && satisfiedEntries.length === attackerAgentsInRound.size;
+                const roundAllSatisfied = satisfiedEntries.length > 0 && allFindings.length === 0;
 
                 // Smart layout: if code is very short but findings are many with no line refs,
                 // this is a design/plan review, not a code review — use text list instead of annotation layout
@@ -380,7 +370,7 @@ export default function AttackResponsePanel({
               if (isDebateRound) {
                 for (const m of allAttackerMsgs2) {
                   const s = m.structured as Record<string, unknown> | undefined;
-                  for (const f of (safeFindings(s?.findings))) {
+                  for (const f of ((s?.findings as Array<Record<string, unknown>>) ?? [])) {
                     allFindings.push({
                       agent: m.agent,
                       category: (f.category as string) ?? '',
@@ -517,7 +507,7 @@ function RoundSummaryChips({ messages }: { messages: DebateMessage[] }) {
     <div className="flex items-center gap-2 text-xs">
       {acceptCount > 0 && <span className="px-1.5 py-0.5 rounded-full bg-green-100 text-green-700">{acceptCount} 修复</span>}
       {rebutCount > 0 && <span className="px-1.5 py-0.5 rounded-full bg-yellow-100 text-yellow-700">{rebutCount} 反驳</span>}
-      {attackerMsgs.length > 0 && <span className={`px-1.5 py-0.5 rounded-full ${satisfiedCount === attackerMsgs.length ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-600'}`}>{satisfiedCount}/{attackerMsgs.length} 通过</span>}
+      {satisfiedCount > 0 && <span className="px-1.5 py-0.5 rounded-full bg-green-100 text-green-700">{satisfiedCount}/3 通过</span>}
     </div>
   );
 }
@@ -554,7 +544,7 @@ function ThreadedDebateView({
     <div className="space-y-3">
       {attackerMsgs.map((msg, mi) => {
         const s = msg.structured as Record<string, unknown> | undefined;
-        const findings = safeFindings(s?.findings) as Array<Record<string, string>>;
+        const findings = (s?.findings as Array<Record<string, string>>) ?? [];
         const stance = s?.stance as string | undefined;
         const isSatisfied = stance === 'satisfied';
         const agentIcon = msg.agent === 'security' ? '🔒' : msg.agent === 'performance' ? '⚡' : '✓';
@@ -697,7 +687,7 @@ export function CoderResponsesSection({
     if (!['security', 'performance', 'correctness'].includes(msg.agent)) continue;
     if ((msg.round ?? 0) >= currentRound) continue;
     const s = msg.structured as Record<string, unknown> | undefined;
-    const findings = safeFindings(s?.findings) as Array<Record<string, string>>;
+    const findings = (s?.findings as Array<Record<string, string>>) ?? [];
     findings.forEach((f, i) => {
       const ref = `${msg.agent.toUpperCase()}-${String(i + 1).padStart(3, '0')}`;
       prevRoundFindings.set(ref, { finding: f, agent: msg.agent });
