@@ -422,7 +422,7 @@ async def coder_node(state: DebateState) -> dict:
                 "1. 必须是完整实现，不是 demo、stub、示例片段或 PoC\n"
                 "2. 必须包含需求中提到的所有核心功能（如认证、加密、数据库操作等）\n"
                 "3. 代码必须可以直接运行，包含所有 import 和必要的类/函数定义\n"
-                "4. 提交前用 run_code_snippet 自测确认能正常运行\n"
+                "4. "
             )
         else:
             prompt = (
@@ -430,7 +430,7 @@ async def coder_node(state: DebateState) -> dict:
                 "严格要求：\n"
                 "1. 必须是完整实现，不是 demo 或示例片段\n"
                 "2. 包含所有核心功能、import 和类/函数定义\n"
-                "3. 提交前用 run_code_snippet 自测确认能正常运行\n"
+                "3. "
             )
         if ctx.extra_context:
             prompt += f"\n\n补充需求：{ctx.extra_context}"
@@ -468,7 +468,7 @@ async def coder_node(state: DebateState) -> dict:
             prompt += "\n\n"
         prompt += (
             "修复后必须通过 updated_code 提交**完整的**新版代码（在上一版基础上修改，不要重写或提交测试脚本）。\n"
-            "提交前请用 run_code_snippet 自测修复后的代码。"
+            ""
         )
         if current:
             prompt += f"\n\n你当前的完整代码如下（在此基础上修改）：\n```\n{current}\n```"
@@ -1058,7 +1058,7 @@ async def final_fix_node(state: DebateState) -> dict:
     fix_prompt = (
         f"仲裁裁决要求你修复以下 {len(must_fix_items)} 个问题。\n"
         f"只修复这些具体问题，不要做其他改动。\n"
-        f"提交前请用 run_code_snippet 自测修复后的代码。\n\n"
+        f"\n\n"
         f"{fix_list}"
     )
     if fix_refs:
@@ -1079,7 +1079,7 @@ async def final_fix_node(state: DebateState) -> dict:
             f"前一次修复失败了。请从不同角度考虑：\n"
             f"策略：{STRATEGY_ANGLES[strategy_idx % len(STRATEGY_ANGLES)]}\n\n"
             f"原始问题：\n{fix_list}\n\n"
-            f"提交前请用 run_code_snippet 自测修复后的代码。"
+            f""
         )
 
         if attempt > 0 and state.get("enable_interrupt"):
@@ -1094,7 +1094,7 @@ async def final_fix_node(state: DebateState) -> dict:
                     current_prompt = (
                         f"用户建议的修复思路：{user_response.get('message', '')}\n\n"
                         f"原始问题：\n{fix_list}\n\n"
-                        f"请按用户思路修复，提交前用 run_code_snippet 自测。"
+                        f"请按用户思路修复，"
                     )
 
         await _notify({"type": "agent_start", "agent": "coder"})
@@ -1149,7 +1149,7 @@ async def final_fix_node(state: DebateState) -> dict:
         refix_prompt = (
             f"Arbitrator 复核发现以下 {len(not_fixed)} 项未正确修复：\n"
             f"{not_fixed_desc}\n"
-            f"请针对性修复，提交前用 run_code_snippet 自测。"
+            f"请针对性修复，"
         )
 
         start = time.monotonic()
@@ -1315,7 +1315,7 @@ async def focused_retry_node(state: DebateState) -> dict:
     fix_prompt = (
         f"Judge 评审发现以下 {len(unresolved)} 个问题仍未解决。\n"
         f"请只针对这些问题修复，不要改动其他部分。\n"
-        f"提交前用 run_code_snippet 自测。\n\n"
+        f"\n\n"
         f"{issue_list}"
     )
 
