@@ -401,12 +401,14 @@ export function DebateProvider({ children }: { children: ReactNode }) {
           });
         }
         const PHASE_ORDER = ['idle', 'analysis', 'plan', 'coding', 'debate', 'arbitration', 'fixing', 'judging', 'user_decision', 'done'];
+        let phaseActuallyChanged = false;
         setCurrentPhase((prev) => {
           const prevIdx = PHASE_ORDER.indexOf(prev);
           const newIdx = PHASE_ORDER.indexOf(newPhase);
           if (prevIdx >= 0 && newIdx >= 0 && newIdx < prevIdx) {
             return prev;
           }
+          phaseActuallyChanged = true;
           return newPhase;
         });
         setActiveAgents(new Set());
@@ -421,7 +423,7 @@ export function DebateProvider({ children }: { children: ReactNode }) {
           judging: 'Judge 正在生成质量报告...',
           done: '完成',
         };
-        if (PHASE_STATUS[newPhase]) {
+        if (phaseActuallyChanged && PHASE_STATUS[newPhase]) {
           setStatusText(PHASE_STATUS[newPhase]);
         }
         break;
@@ -617,6 +619,13 @@ export function DebateProvider({ children }: { children: ReactNode }) {
       planConfirmedRef.current = true;
       setCurrentPhase('coding');
       setStatusText('方案已确认，正在准备编码...');
+      const planContent = interruptData?.content as string;
+      if (planContent) {
+        setMessages((prev) => {
+          if (prev.some((m) => m.content.startsWith('[方案设计]'))) return prev;
+          return [...prev, { agent: 'coder', content: `[方案设计] ${planContent}`, round: 0 }];
+        });
+      }
     }
   }, [interruptData]);
 

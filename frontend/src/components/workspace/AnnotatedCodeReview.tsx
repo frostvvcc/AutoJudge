@@ -47,11 +47,11 @@ const AGENT_TEXT_COLORS: Record<string, string> = {
   correctness: 'text-green-600',
 };
 
-const AGENT_DOT_CSS: Record<string, string> = {
-  security: '#ef4444',
-  performance: '#f97316',
-  correctness: '#22c55e',
-  satisfied: '#22c55e',
+const SEVERITY_DOT_CSS: Record<string, string> = {
+  critical: '#ef4444',
+  high: '#f97316',
+  medium: '#eab308',
+  low: '#9ca3af',
 };
 
 const SEVERITY_STYLES: Record<string, string> = {
@@ -137,7 +137,6 @@ export default function AnnotatedCodeReview({
       const GAP = 6;
 
       annCards.forEach(card => {
-        const idx = parseInt(card.dataset.annIdx!);
         const anchorLine = parseInt(card.dataset.anchor ?? '1');
         const lineEl = codeCol.querySelector(`[data-ln="${anchorLine}"]`);
         if (!lineEl) {
@@ -152,8 +151,8 @@ export default function AnnotatedCodeReview({
         card.style.top = `${actualTop}px`;
         prevBottom = actualTop + card.getBoundingClientRect().height;
 
-        const agentType = card.dataset.agentType ?? 'correctness';
-        const color = AGENT_DOT_CSS[agentType] ?? '#9ca3af';
+        const severity = card.dataset.severity ?? 'medium';
+        const color = SEVERITY_DOT_CSS[severity] ?? '#9ca3af';
         const bridgeY = idealTop + lineRect.height / 2;
 
         // Connector dot (6px per mockup)
@@ -209,15 +208,16 @@ export default function AnnotatedCodeReview({
     if (start && start > 0) {
       const s = start;
       const e = end || s;
-      for (let i = s; i <= e; i++) highlightMap.set(i, f.agent);
+      for (let i = s; i <= e; i++) highlightMap.set(i, f.severity);
     }
   }
 
-  const hlClass = (agent: string) => {
-    switch (agent) {
-      case 'security': return 'border-l-[3px] border-l-[#ef4444] bg-[rgba(239,68,68,0.09)]';
-      case 'performance': return 'border-l-[3px] border-l-[#f97316] bg-[rgba(249,115,22,0.09)]';
-      case 'correctness': return 'border-l-[3px] border-l-[#22c55e] bg-[rgba(34,197,94,0.09)]';
+  const hlClass = (severity: string) => {
+    switch (severity) {
+      case 'critical': return 'border-l-[3px] border-l-[#ef4444] bg-[rgba(239,68,68,0.09)]';
+      case 'high': return 'border-l-[3px] border-l-[#f97316] bg-[rgba(249,115,22,0.09)]';
+      case 'medium': return 'border-l-[3px] border-l-[#eab308] bg-[rgba(234,179,8,0.09)]';
+      case 'low': return 'border-l-[3px] border-l-[#9ca3af] bg-[rgba(156,163,175,0.07)]';
       default: return '';
     }
   };
@@ -247,9 +247,9 @@ export default function AnnotatedCodeReview({
           <pre className="m-0 py-2 font-mono text-[#1a1a1a]" style={{ fontFamily: "'SF Mono','Fira Code','Consolas',monospace" }}>
             {codeLines.map((line, i) => {
               const ln = i + 1;
-              const hlAgent = highlightMap.get(ln);
+              const hlSeverity = highlightMap.get(ln);
               const isFixed = coderFixedLines?.has(ln);
-              const lineStyle = hlAgent ? hlClass(hlAgent) : isFixed ? fixClass : '';
+              const lineStyle = hlSeverity ? hlClass(hlSeverity) : isFixed ? fixClass : '';
               return (
                 <div key={ln} data-ln={ln} className={`flex pr-2.5 leading-[1.45] ${lineStyle}`}>
                   <span className="inline-block w-[30px] text-right pr-2.5 text-[#bbb] select-none shrink-0" style={{ fontSize: '0.82em' }}>{ln}</span>
@@ -283,7 +283,7 @@ export default function AnnotatedCodeReview({
                 key={`f-${idx}`}
                 data-ann-idx={idx}
                 data-anchor={f.line_start ?? 1}
-                data-agent-type={f.agent}
+                data-severity={f.severity}
                 className={`absolute left-2 right-2 rounded-[7px] border ${borderColor} bg-white shadow-sm cursor-pointer hover:shadow-md transition-shadow`}
               >
                 <div className="flex items-center gap-[5px] px-2 py-[6px]" onClick={() => toggleAnn(idx)}>
@@ -331,29 +331,7 @@ export default function AnnotatedCodeReview({
           });
           })()}
 
-          {/* Satisfied entries (Round 2 style — green, no expand) */}
-          {satisfiedEntries?.map((s, idx) => {
-            const icon = AGENT_ICONS[s.agent] ?? '✔';
-            const anchorLine = s.anchorLine ?? (1 + idx * 6);
-
-            return (
-              <div
-                key={`s-${idx}`}
-                data-ann-idx={findings.length + idx}
-                data-anchor={anchorLine}
-                data-agent-type="satisfied"
-                className="absolute left-2 right-2 rounded-[7px] border border-[#bbf7d0] bg-white shadow-sm"
-                style={{ cursor: 'default' }}
-              >
-                <div className="flex items-center gap-[5px] px-2 py-[6px]">
-                  <span style={{ fontSize: '1em' }}>{icon}</span>
-                  <span className="font-bold text-green-600" style={{ fontSize: '0.92em' }}>{AGENT_LABELS[s.agent] ?? s.agent}</span>
-                  <span className="px-1 rounded-[3px] font-bold bg-green-100 text-green-600" style={{ fontSize: '0.75em' }}>✓</span>
-                  <span className="text-green-600 font-semibold truncate flex-1" style={{ fontSize: '0.92em' }}>{s.message}</span>
-                </div>
-              </div>
-            );
-          })}
+          {/* Satisfied entries removed — no annotations needed for code without issues */}
         </div>
       </div>
 
@@ -364,17 +342,18 @@ export default function AnnotatedCodeReview({
         </div>
       )}
 
-      {/* Legend — context-aware */}
+      {/* Legend — severity-based */}
       <div className="flex gap-3 px-3 py-[7px] bg-[#fafbfc] border-t border-[#eaedf0]">
         {hasFindings && (
           <>
-            <div className="flex items-center gap-1 text-[9px] text-[#888]"><div className="w-2 h-[3px] rounded bg-[#ef4444]" />Security</div>
-            <div className="flex items-center gap-1 text-[9px] text-[#888]"><div className="w-2 h-[3px] rounded bg-[#f97316]" />Performance</div>
-            <div className="flex items-center gap-1 text-[9px] text-[#888]"><div className="w-2 h-[3px] rounded bg-[#22c55e]" />Correctness</div>
+            <div className="flex items-center gap-1 text-[9px] text-[#888]"><div className="w-2 h-[3px] rounded bg-[#ef4444]" />Critical</div>
+            <div className="flex items-center gap-1 text-[9px] text-[#888]"><div className="w-2 h-[3px] rounded bg-[#f97316]" />High</div>
+            <div className="flex items-center gap-1 text-[9px] text-[#888]"><div className="w-2 h-[3px] rounded bg-[#eab308]" />Medium</div>
+            <div className="flex items-center gap-1 text-[9px] text-[#888]"><div className="w-2 h-[3px] rounded bg-[#9ca3af]" />Low</div>
           </>
         )}
         {coderFixedLines && coderFixedLines.size > 0 && (
-          <div className="flex items-center gap-1 text-[9px] text-[#888]"><div className="w-2 h-[3px] rounded bg-[#3b82f6]" />✎ Coder 修改</div>
+          <div className="flex items-center gap-1 text-[9px] text-[#888]"><div className="w-2 h-[3px] rounded bg-[#3b82f6]" />Coder 修改</div>
         )}
         {hasFindings && <span className="ml-auto text-[9px] text-[#aaa]">点击批注展开详情</span>}
       </div>

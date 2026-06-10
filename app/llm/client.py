@@ -420,6 +420,130 @@ async def _call_anthropic_api(
 
 
 
+def _recover_corrupted_json(raw: str) -> dict:
+    """Recover tool_use input from corrupted SSE JSON.
+
+    Proxy SSE sometimes duplicates input_json_delta, producing:
+    - "{valid1}{valid2}" (two complete copies)
+    - "{truncated...}{complete}" (partial + complete)
+    - Fragment-level duplication within one JSON
+
+    Strategy: raw_decode first complete object → bracket-balanced scan
+    → regex extract of key fields as last resort. Never return {}.
+    """
+    # Strategy 1: raw_decode parses the first complete JSON object
+    try:
+        parsed, _ = json.JSONDecoder().raw_decode(raw)
+        if isinstance(parsed, dict) and parsed:
+            logger.info("sse_json_recovered via raw_decode keys=%s", list(parsed.keys()))
+            return parsed
+    except (json.JSONDecodeError, ValueError):
+        pass
+
+    # Strategy 2: find the LAST top-level '{' using bracket balancing
+    # (skip all { inside JSON strings to avoid false positives from code content)
+    top_level_starts = _find_top_level_braces(raw)
+    for start_pos in reversed(top_level_starts):
+        try:
+            parsed = json.loads(raw[start_pos:])
+            if isinstance(parsed, dict) and parsed:
+                logger.info("sse_json_recovered via bracket scan pos=%d keys=%s",
+                            start_pos, list(parsed.keys()))
+                return parsed
+        except (json.JSONDecodeError, ValueError):
+            continue
+
+    # Strategy 3: regex extract key fields from raw string
+    # This is the last resort — even with corrupted JSON, we can usually
+    # find "updated_code":"..." because it's a simple string field
+    result = _regex_extract_fields(raw)
+    if result:
+        logger.warning("sse_json_recovered via regex extraction keys=%s", list(result.keys()))
+        return result
+
+    logger.error("sse_json_recovery_failed raw_len=%d raw_start=%s", len(raw), raw[:200])
+    return {}
+
+
+def _find_top_level_braces(raw: str) -> list[int]:
+    """Find positions of '{' that are NOT inside JSON strings."""
+    positions = []
+    in_string = False
+    escape = False
+    for i, ch in enumerate(raw):
+        if escape:
+            escape = False
+            continue
+        if ch == '\\' and in_string:
+            escape = True
+            continue
+        if ch == '"':
+            in_string = not in_string
+            continue
+        if not in_string and ch == '{':
+            positions.append(i)
+    return positions
+
+
+def _regex_extract_fields(raw: str) -> dict:
+    """Extract key fields from corrupted JSON using regex.
+    Handles updated_code, message, responses even when full JSON is broken."""
+    import re
+    result = {}
+
+    # Extract updated_code (the critical field)
+    code_match = re.search(r'"updated_code"\s*:\s*"', raw)
+    if code_match:
+        start = code_match.end()
+        # Walk forward, handling escapes, to find the closing "
+        code_chars = []
+        i = start
+        while i < len(raw):
+            ch = raw[i]
+            if ch == '\\' and i + 1 < len(raw):
+                code_chars.append(ch)
+                code_chars.append(raw[i + 1])
+                i += 2
+                continue
+            if ch == '"':
+                break
+            code_chars.append(ch)
+            i += 1
+        if code_chars:
+            code_str = ''.join(code_chars)
+            # Unescape JSON string escapes
+            try:
+                result["updated_code"] = json.loads(f'"{code_str}"')
+            except (json.JSONDecodeError, ValueError):
+                result["updated_code"] = code_str.replace('\\n', '\n').replace('\\t', '\t').replace('\\"', '"')
+
+    # Extract message
+    msg_match = re.search(r'"message"\s*:\s*"', raw)
+    if msg_match:
+        start = msg_match.end()
+        i = start
+        msg_chars = []
+        while i < len(raw):
+            ch = raw[i]
+            if ch == '\\' and i + 1 < len(raw):
+                msg_chars.append(ch)
+                msg_chars.append(raw[i + 1])
+                i += 2
+                continue
+            if ch == '"':
+                break
+            msg_chars.append(ch)
+            i += 1
+        if msg_chars:
+            msg_str = ''.join(msg_chars)
+            try:
+                result["message"] = json.loads(f'"{msg_str}"')
+            except (json.JSONDecodeError, ValueError):
+                result["message"] = msg_str.replace('\\n', '\n').replace('\\t', '\t')
+
+    return result
+
+
 # ─── Backend 3: Anthropic-compatible proxy (SSE streaming) ──────────────────
 
 async def _stream_anthropic_sse(http, url: str, headers: dict, body: dict) -> dict:
@@ -489,29 +613,7 @@ async def _stream_anthropic_sse(http, url: str, headers: dict, body: dict) -> di
                         try:
                             current_block["input"] = json.loads(raw)
                         except json.JSONDecodeError:
-                            # Proxy SSE sometimes duplicates input_json_delta,
-                            # producing "{ valid1 }{ valid2 }" or a truncated
-                            # first copy followed by a complete second copy.
-                            # Try raw_decode (handles complete+complete), then
-                            # scan for the last complete JSON object.
-                            parsed = None
-                            try:
-                                parsed, _ = json.JSONDecoder().raw_decode(raw)
-                            except (json.JSONDecodeError, ValueError):
-                                for i in range(1, len(raw)):
-                                    if raw[i] == '{':
-                                        try:
-                                            parsed = json.loads(raw[i:])
-                                            break
-                                        except (json.JSONDecodeError, ValueError):
-                                            continue
-                            if isinstance(parsed, dict) and parsed:
-                                current_block["input"] = parsed
-                                logger.info("sse_duplicate_json_recovered keys=%s",
-                                            list(parsed.keys()))
-                            else:
-                                current_block["input"] = {}
-                                logger.warning("sse_json_parse_failed raw_len=%d", len(raw))
+                            current_block["input"] = _recover_corrupted_json(raw)
                     content_blocks.append(current_block)
                     current_block = None
 
@@ -656,11 +758,10 @@ async def _call_anthropic_proxy(
                         code = inp["updated_code"]
                         structured = inp
                         break
-                    if block.get("name") == "run_code_snippet" and inp.get("code"):
-                        code = inp["code"]
-                        break
             if code:
                 break
+        if code is None:
+            logger.warning("coder_code_extraction_failed: no updated_code found in any submit_response")
 
     if agent == "judge":
         block_types = [b.get("type") for b in data.get("content", [])]

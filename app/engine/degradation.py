@@ -141,7 +141,7 @@ class DegradationManager:
                 self.circuit_breaker.record_failure()
                 await _notify_degradation("L1", str(e)[:80])
 
-        # L1: Reduced attackers — NO on_progress to avoid "restart" illusion
+        # L1: Reduced attackers — still send progress so user sees what's happening
         try:
             reduced_config = DebateConfig(
                 max_rounds=2,
@@ -155,6 +155,7 @@ class DegradationManager:
                 language=language,
                 framework=framework,
                 config=reduced_config,
+                on_progress=on_progress,
             )
             result.metadata["degradation_level"] = "L1_PARTIAL"
             return result
@@ -176,6 +177,7 @@ class DegradationManager:
                 language=language,
                 framework=framework,
                 config=no_debate_config,
+                on_progress=on_progress,
             )
             result.metadata["degradation_level"] = "L2_SINGLE_AGENT"
             return result

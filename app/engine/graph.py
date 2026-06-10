@@ -281,7 +281,12 @@ async def plan_node(state: DebateState) -> dict:
         )
 
         start = time.monotonic()
-        response = await coder_agent.speak(ctx, adjust_prompt, budget)
+        try:
+            response = await coder_agent.speak(ctx, adjust_prompt, budget)
+        except Exception as e:
+            logger.warning("plan_node_chat_failed error=%s, retrying", e)
+            await asyncio.sleep(2)
+            response = await coder_agent.speak(ctx, adjust_prompt, budget)
         record_agent_call("coder", response.tokens_used, time.monotonic() - start)
         await _notify_budget(budget, "plan", "coder")
         plans_content = response.content
@@ -302,13 +307,24 @@ async def plan_node(state: DebateState) -> dict:
             "不写代码，只说方案。每个方案说明技术选型、核心流程、安全考虑、不包含什么。"
         )
         messages = [{"role": "user", "content": prompt}]
-        response = await call_agent(
-            agent="planner",
-            system_prompt=system,
-            messages=messages,
-            model=get_model_for_agent("planner"),
-            max_tokens=await budget.get_max_tokens("coder"),
-        )
+        try:
+            response = await call_agent(
+                agent="planner",
+                system_prompt=system,
+                messages=messages,
+                model=get_model_for_agent("planner"),
+                max_tokens=await budget.get_max_tokens("coder"),
+            )
+        except Exception as e:
+            logger.warning("plan_node_generate_failed error=%s, retrying", e)
+            await asyncio.sleep(2)
+            response = await call_agent(
+                agent="planner",
+                system_prompt=system,
+                messages=messages,
+                model=get_model_for_agent("planner"),
+                max_tokens=await budget.get_max_tokens("coder"),
+            )
         await budget.record("coder", response.tokens_used)
         record_agent_call("coder", response.tokens_used, time.monotonic() - start)
         await _notify_budget(budget, "plan", "planner")
@@ -464,14 +480,44 @@ async def coder_node(state: DebateState) -> dict:
                     prompt += f"\n\n历史修复参考（{desc[:40]}）：\n" + "\n".join(fixes[:2])
 
     start = time.monotonic()
-    set_stream_callback(_make_stream_cb("coder"))
-    response = await coder_agent.speak(ctx, prompt, budget)
-    set_stream_callback(None)
+    prev_code = state.get("current_code", "")
+    try:
+        set_stream_callback(_make_stream_cb("coder"))
+        response = await coder_agent.speak(ctx, prompt, budget)
+        set_stream_callback(None)
+    except Exception as e:
+        set_stream_callback(None)
+        logger.warning("coder_node_api_failed round=%d error=%s, retrying once", ctx.round, e)
+        await _notify({"type": "agent_error", "agent": "coder", "error": str(e)[:200], "is_proxy_error": True})
+        try:
+            await asyncio.sleep(2)
+            set_stream_callback(_make_stream_cb("coder"))
+            response = await coder_agent.speak(ctx, prompt, budget)
+            set_stream_callback(None)
+        except Exception as e2:
+            set_stream_callback(None)
+            logger.error("coder_node_retry_failed round=%d error=%s", ctx.round, e2)
+            await _notify({"type": "stream_end", "agent": "coder"})
+            fallback_msg = {
+                "agent": "coder",
+                "content": f"[API 调用失败] Coder 暂时无法响应: {str(e2)[:100]}",
+                "round": ctx.round,
+                "code": prev_code or None,
+            }
+            await _notify({"type": "message", **fallback_msg})
+            return {
+                "round": ctx.round,
+                "current_code": prev_code,
+                "messages": [fallback_msg],
+                "budget_spent": budget.spent,
+                "budget_by_agent": dict(budget.by_agent),
+                "budget_by_phase": dict(budget.by_phase),
+                "budget_cache_stats": dict(budget.cache_stats),
+            }
     record_agent_call("coder", response.tokens_used, time.monotonic() - start)
     await _notify_budget(budget, "code_gen" if ctx.round == 1 else "debate", "coder")
 
     # --- Code quality gate: reject demo/stub/test scripts ---
-    prev_code = state.get("current_code", "")
     new_code = response.code or ""
     MIN_FIRST_CODE_LEN = 200
 
@@ -991,7 +1037,22 @@ async def arbitration_node(state: DebateState) -> dict:
         "content": f"辩论未收敛，Arbitrator 正在仲裁 {len(disputes)} 条争议...",
     })
 
-    arbitration_result = await arbitrator_agent.arbitrate(ctx, budget, disputes)
+    try:
+        arbitration_result = await arbitrator_agent.arbitrate(ctx, budget, disputes)
+    except Exception as e:
+        logger.warning("arbitration_node_api_failed error=%s, retrying once", e)
+        await _notify({"type": "agent_error", "agent": "arbitrator", "error": str(e)[:200], "is_proxy_error": True})
+        try:
+            await asyncio.sleep(2)
+            arbitration_result = await arbitrator_agent.arbitrate(ctx, budget, disputes)
+        except Exception as e2:
+            logger.error("arbitration_node_retry_failed error=%s, delivering as-is", e2)
+            return {
+                "converged": True,
+                "convergence_reason": f"仲裁 API 失败（{str(e2)[:60]}），以当前代码交付",
+                "arbitration_result": {},
+                "must_fix_items": [],
+            }
     await _notify_budget(budget, "arbitration", "arbitrator")
 
     await _notify({
@@ -1026,12 +1087,34 @@ async def arbitration_node(state: DebateState) -> dict:
     rulings = arbitration_result.get("rulings", [])
     must_fix = [r for r in rulings if r.get("verdict") == "must_fix"]
 
+    ruling_lines = []
+    for r in rulings:
+        verdict = r.get("verdict", "?")
+        severity = r.get("re_assessed_severity", "?")
+        reasoning = r.get("reasoning", "")
+        ruling_lines.append(f"- [{severity}] {verdict}: {reasoning}")
+    summary = arbitration_result.get("summary", "")
+    arb_content = (
+        f"## 仲裁结果：{overall}\n\n"
+        f"{summary}\n\n"
+        f"### 逐条裁决（{len(rulings)} 条）\n\n"
+        + "\n".join(ruling_lines)
+    )
+    arb_msg = {
+        "agent": "arbitrator",
+        "content": arb_content,
+        "round": state.get("round", 0),
+        "structured": arbitration_result,
+    }
+    await _notify({"type": "message", **arb_msg})
+
     if overall == "deliverable" or not must_fix:
         return {
             "converged": True,
             "convergence_reason": f"仲裁裁决：代码可交付（{len(disputes)} 条争议已裁决）",
             "arbitration_result": arbitration_result,
             "must_fix_items": [],
+            "messages": [arb_msg],
         }
 
     if overall == "fix_then_deliver" and len(must_fix) <= 3:
@@ -1044,6 +1127,7 @@ async def arbitration_node(state: DebateState) -> dict:
                 "convergence_reason": "仲裁裁决：需修复后交付",
                 "arbitration_result": arbitration_result,
                 "must_fix_items": must_fix,
+                "messages": [arb_msg],
             }
 
     return {
@@ -1051,6 +1135,7 @@ async def arbitration_node(state: DebateState) -> dict:
         "convergence_reason": "仲裁裁决：建议人工审查",
         "arbitration_result": arbitration_result,
         "must_fix_items": [],
+        "messages": [arb_msg],
     }
 
 
@@ -1129,7 +1214,13 @@ async def final_fix_node(state: DebateState) -> dict:
         await _notify({"type": "fix_progress", "attempt": attempt + 1, "max_attempts": 3})
 
         start = time.monotonic()
-        response = await coder_agent.speak(ctx, current_prompt, budget)
+        try:
+            response = await coder_agent.speak(ctx, current_prompt, budget)
+        except Exception as e:
+            logger.warning("final_fix_coder_failed attempt=%d error=%s", attempt + 1, e)
+            await _notify({"type": "agent_error", "agent": "coder", "error": str(e)[:200], "is_proxy_error": True})
+            strategy_idx += 1
+            continue
         record_agent_call("coder", response.tokens_used, time.monotonic() - start)
         await _notify_budget(budget, "arbitration", "coder")
 
@@ -1173,7 +1264,11 @@ async def final_fix_node(state: DebateState) -> dict:
     })
 
     ctx.current_code = new_code
-    reviews = await arbitrator_agent.review_fixes(ctx, budget, must_fix_items)
+    try:
+        reviews = await arbitrator_agent.review_fixes(ctx, budget, must_fix_items)
+    except Exception as e:
+        logger.warning("final_fix_review_failed error=%s, skipping review", e)
+        reviews = []
     await _notify_budget(budget, "arbitration", "arbitrator")
 
     not_fixed = [r for r in reviews if r.get("status") != "fixed"]
@@ -1195,7 +1290,20 @@ async def final_fix_node(state: DebateState) -> dict:
         )
 
         start = time.monotonic()
-        refix_response = await coder_agent.speak(ctx, refix_prompt, budget)
+        try:
+            refix_response = await coder_agent.speak(ctx, refix_prompt, budget)
+        except Exception as e:
+            logger.warning("final_fix_refix_failed error=%s, delivering current code", e)
+            return {
+                "current_code": new_code,
+                "messages": all_fix_msgs,
+                "budget_spent": budget.spent,
+                "budget_by_agent": dict(budget.by_agent),
+                "budget_by_phase": dict(budget.by_phase),
+                "budget_cache_stats": dict(budget.cache_stats),
+                "converged": True,
+                "convergence_reason": "仲裁后修复完成（补修 API 失败，使用当前版本）",
+            }
         record_agent_call("coder", refix_response.tokens_used, time.monotonic() - start)
         await _notify_budget(budget, "arbitration", "coder")
 
@@ -1241,9 +1349,23 @@ async def judge_node(state: DebateState) -> dict:
     await _notify({"type": "agent_start", "agent": "judge"})
 
     start = time.monotonic()
-    set_stream_callback(_make_stream_cb("judge"))
-    report = await judge_agent.summarize(ctx, budget)
-    set_stream_callback(None)
+    report = None
+    try:
+        set_stream_callback(_make_stream_cb("judge"))
+        report = await judge_agent.summarize(ctx, budget)
+        set_stream_callback(None)
+    except Exception as e:
+        set_stream_callback(None)
+        logger.warning("judge_node_api_failed error=%s, retrying once", e)
+        await _notify({"type": "agent_error", "agent": "judge", "error": str(e)[:200], "is_proxy_error": True})
+        try:
+            await asyncio.sleep(2)
+            set_stream_callback(_make_stream_cb("judge"))
+            report = await judge_agent.summarize(ctx, budget)
+            set_stream_callback(None)
+        except Exception as e2:
+            set_stream_callback(None)
+            logger.error("judge_node_retry_failed error=%s, using fallback", e2)
     record_agent_call("judge", budget.by_agent.get("judge", 0), time.monotonic() - start)
     await _notify({"type": "stream_end", "agent": "judge"})
     await _notify_budget(budget, "judge", "judge")
